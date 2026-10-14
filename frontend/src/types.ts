@@ -10,6 +10,11 @@ export interface Product {
   image_url: string;
 }
 
+export interface CartItem {
+  product: Product;
+  quantity: number;
+}
+
 export interface HealthStatus {
   status: string;
   catalog_items_loaded: number;

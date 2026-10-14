@@ -234,7 +234,8 @@ def seed_catalog(db_path: str | None = None) -> int:
     """Seeds the 20 products into SQLite database deterministically using INSERT OR REPLACE."""
     init_db(db_path)
     inserted_count = 0
-    with get_connection(db_path) as conn:
+    conn = get_connection(db_path)
+    try:
         cursor = conn.cursor()
         for p in SAMPLE_PRODUCTS:
             cursor.execute("""
@@ -255,6 +256,8 @@ def seed_catalog(db_path: str | None = None) -> int:
             ))
             inserted_count += 1
         conn.commit()
+    finally:
+        conn.close()
     return inserted_count
 
 if __name__ == "__main__":

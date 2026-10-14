@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.config import settings
 from backend.app.db.database import init_db
 from backend.app.db.repository import CatalogRepository
-from backend.app.models.schemas import HealthResponse
+from backend.app.models.schemas import HealthResponse, Product
+from fastapi import HTTPException
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -47,6 +48,16 @@ def get_health() -> HealthResponse:
         gemini_configured=bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip()),
         version=settings.APP_VERSION,
     )
+
+@app.get("/api/v1/catalog", response_model=list[Product], tags=["Catalog"])
+def get_catalog() -> list[Product]:
+    """Retrieves all 20 catalog products with verified reference prices, COGS, and stock."""
+    try:
+        repo = CatalogRepository()
+        products = repo.get_all_products()
+        return products
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve catalog from database: {str(e)}")
 
 @app.get("/", tags=["Root"])
 def root_status():

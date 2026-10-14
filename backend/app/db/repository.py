@@ -25,35 +25,47 @@ class CatalogRepository:
 
     def count_products(self) -> int:
         """Returns the total number of products in the catalog."""
-        with get_connection(self.db_path) as conn:
+        conn = get_connection(self.db_path)
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM products;")
             row = cursor.fetchone()
             return row[0] if row else 0
+        finally:
+            conn.close()
 
     def get_all_products(self) -> list[Product]:
         """Retrieves all products from the catalog."""
-        with get_connection(self.db_path) as conn:
+        conn = get_connection(self.db_path)
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM products ORDER BY id ASC;")
             rows = cursor.fetchall()
             return [self._row_to_product(r) for r in rows]
+        finally:
+            conn.close()
 
     def get_product_by_id(self, product_id: str) -> Product | None:
         """Retrieves a single product by its unique ID."""
-        with get_connection(self.db_path) as conn:
+        conn = get_connection(self.db_path)
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM products WHERE id = ?;", (product_id,))
             row = cursor.fetchone()
             return self._row_to_product(row) if row else None
+        finally:
+            conn.close()
 
     def get_products_by_ids(self, product_ids: list[str]) -> list[Product]:
         """Retrieves multiple products given a list of IDs."""
         if not product_ids:
             return []
         placeholders = ",".join("?" for _ in product_ids)
-        with get_connection(self.db_path) as conn:
+        conn = get_connection(self.db_path)
+        try:
             cursor = conn.cursor()
             cursor.execute(f"SELECT * FROM products WHERE id IN ({placeholders});", product_ids)
             rows = cursor.fetchall()
             return [self._row_to_product(r) for r in rows]
+        finally:
+            conn.close()

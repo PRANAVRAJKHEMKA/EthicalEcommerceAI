@@ -1,135 +1,179 @@
-import { useState, useEffect } from 'react';
-import { HealthStatus } from './types.ts';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Product, CartItem, HealthStatus } from './types.ts';
+import { fetchHealth, fetchCatalog } from './api.ts';
+import { Header } from './components/Header.tsx';
+import { CartDrawer } from './components/CartDrawer.tsx';
+import { CheckoutModal } from './components/CheckoutModal.tsx';
+import { StorefrontView } from './views/StorefrontView.tsx';
+import { MerchantView } from './views/MerchantView.tsx';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'store' | 'merchant'>('store');
   const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingHealth, setLoadingHealth] = useState(true);
 
-  useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/v1/health')
-      .then((res) => res.json())
-      .then((data: HealthStatus) => {
-        setHealth(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [productsError, setProductsError] = useState<string | null>(null);
+
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // Load health check on mount
+  const checkHealth = useCallback(async () => {
+    try {
+      setLoadingHealth(true);
+      const data = await fetchHealth();
+      setHealth(data);
+    } catch {
+      setHealth(null);
+    } finally {
+      setLoadingHealth(false);
+    }
   }, []);
 
+  // Load catalogue products on mount or retry
+  const loadProducts = useCallback(async () => {
+    try {
+      setLoadingProducts(true);
+      setProductsError(null);
+      const data = await fetchCatalog();
+      setProducts(data);
+    } catch (err) {
+      setProductsError(
+        err instanceof Error ? err.message : 'Unable to connect to the catalogue service.'
+      );
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkHealth();
+    loadProducts();
+  }, [checkHealth, loadProducts]);
+
+  // Cart operations
+  const handleAddToCart = (product: Product) => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.product.id === product.id);
+      if (existing) {
+        return prev.map((item) =>
+          item.product.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        );
+      }
+      return [...prev, { product, quantity: 1 }];
+    });
+  };
+
+  const handleUpdateQuantity = (productId: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((item) => {
+          if (item.product.id === productId) {
+            const nextQuantity = item.quantity + delta;
+            return nextQuantity > 0 ? { ...item, quantity: nextQuantity } : null;
+          }
+          return item;
+        })
+        .filter((item): item is CartItem => item !== null)
+    );
+  };
+
+  const handleRemoveItem = (productId: string) => {
+    setCart((prev) => prev.filter((item) => item.product.id !== productId));
+  };
+
+  const handleClearCart = () => {
+    setCart([]);
+  };
+
+  const handleCompleteOrder = () => {
+    setCart([]);
+  };
+
+  // Fast lookup of cart quantities by product id
+  const cartQuantities = useMemo(() => {
+    const map: { [productId: string]: number } = {};
+    cart.forEach((item) => {
+      map[item.product.id] = item.quantity;
+    });
+    return map;
+  }, [cart]);
+
+  const totalCartCount = useMemo(
+    () => cart.reduce((sum, item) => sum + item.quantity, 0),
+    [cart]
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Top Navigation */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <span className="text-xl font-bold tracking-tight text-slate-900">
-              FairCart <span className="text-emerald-600">AI</span>
-            </span>
-            <span className="hidden sm:inline-block text-xs bg-emerald-50 text-emerald-700 font-medium px-2.5 py-0.5 rounded-full border border-emerald-200">
-              Ethical Commerce Engine
-            </span>
-          </div>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col justify-between">
+      <div>
+        {/* Navigation Header */}
+        <Header
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          cartCount={totalCartCount}
+          openCart={() => setIsCartOpen(true)}
+          health={health}
+          loadingHealth={loadingHealth}
+        />
 
-          {/* View Switcher Navigation */}
-          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-            <button
-              onClick={() => setActiveTab('store')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                activeTab === 'store'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Shop Store
-            </button>
-            <button
-              onClick={() => setActiveTab('merchant')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                activeTab === 'merchant'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Merchant Console
-            </button>
-          </div>
-
-          {/* Backend Status Badge */}
-          <div className="flex items-center space-x-2 text-xs">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                health && health.status === 'healthy' ? 'bg-emerald-500' : 'bg-amber-400'
-              }`}
+        {/* Main Application Content */}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+          {activeTab === 'store' ? (
+            <StorefrontView
+              products={products}
+              loading={loadingProducts}
+              error={productsError}
+              onRetry={loadProducts}
+              onAddToCart={handleAddToCart}
+              cartQuantities={cartQuantities}
             />
-            <span className="text-slate-600 font-mono">
-              {loading
-                ? 'Connecting API...'
-                : health
-                ? `DB Ready (${health.catalog_items_loaded} items)`
-                : 'API Offline'}
-            </span>
+          ) : (
+            <MerchantView products={products} />
+          )}
+        </main>
+      </div>
+
+      {/* Slide-out Cart Drawer */}
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cart={cart}
+        onUpdateQuantity={handleUpdateQuantity}
+        onRemoveItem={handleRemoveItem}
+        onClearCart={handleClearCart}
+        onOpenCheckout={() => {
+          setIsCartOpen(false);
+          setIsCheckoutOpen(true);
+        }}
+      />
+
+      {/* Simulated Checkout Modal */}
+      <CheckoutModal
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        cart={cart}
+        onCompleteOrder={handleCompleteOrder}
+      />
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200 bg-white py-6 mt-12 text-center text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center space-x-2">
+            <span className="font-semibold text-slate-800">FairCart AI</span>
+            <span>·</span>
+            <span>Devpost "Build With AI: Basics"</span>
+          </div>
+          <div className="text-slate-400">
+            Explainable, Margin-Preserving E-Commerce · Sub-25ms Local Decisions · Powered by Gemini
           </div>
         </div>
-      </header>
-
-      {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-xl border border-slate-200 p-8 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">
-                {activeTab === 'store' ? 'Storefront Scaffold' : 'Merchant Console Scaffold'}
-              </h1>
-              <p className="text-sm text-slate-500 mt-1">
-                Milestone 1 — Foundation & Health Operational
-              </p>
-            </div>
-            <span className="text-xs font-mono bg-slate-100 text-slate-700 px-3 py-1 rounded-md border border-slate-200">
-              Devpost Build With AI: Basics
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Database Engine
-              </span>
-              <p className="text-lg font-bold text-slate-800 mt-1">
-                SQLite Embedded
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Sub-millisecond query latency; zero cloud dependencies.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Catalog Items Loaded
-              </span>
-              <p className="text-lg font-bold text-slate-800 mt-1">
-                {health ? `${health.catalog_items_loaded} Products` : '20 Seeded in DB'}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Realistic wholesale COGS and base reference prices.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Next Stage
-              </span>
-              <p className="text-lg font-bold text-indigo-600 mt-1">
-                Milestone 2
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Catalog API, interactive cart drawer, and recommendation card.
-              </p>
-            </div>
-          </div>
-        </div>
-      </main>
+      </footer>
     </div>
   );
 }

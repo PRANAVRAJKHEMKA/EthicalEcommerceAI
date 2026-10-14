@@ -14,7 +14,8 @@ def init_db(db_path: str | None = None) -> None:
     target_path = db_path or settings.DATABASE_PATH
     Path(target_path).parent.mkdir(parents=True, exist_ok=True)
     
-    with get_connection(target_path) as conn:
+    conn = get_connection(target_path)
+    try:
         cursor = conn.cursor()
         
         # Products table: stores 20-item catalog with prices in integer cents
@@ -52,6 +53,8 @@ def init_db(db_path: str | None = None) -> None:
         # Index on category and id for fast candidate retrieval
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);")
         conn.commit()
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     init_db()
