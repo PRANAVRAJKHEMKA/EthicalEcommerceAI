@@ -1,5 +1,6 @@
-import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, RotateCcw, ShieldCheck } from 'lucide-react';
-import { CartItem } from '../types.ts';
+import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, RotateCcw, ShieldCheck, Tag } from 'lucide-react';
+import { CartItem, RecommendationResponse, IncentiveResponse } from '../types.ts';
+import { RecommendationCard } from './RecommendationCard.tsx';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -9,6 +10,11 @@ interface CartDrawerProps {
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
   onOpenCheckout: () => void;
+  recommendation: RecommendationResponse | null;
+  incentive: IncentiveResponse | null;
+  onAcceptRecommendation: (rec: RecommendationResponse, inc: IncentiveResponse | null) => void;
+  onDismissRecommendation: () => void;
+  isRecommendationDismissed: boolean;
 }
 
 export function CartDrawer({
@@ -19,11 +25,33 @@ export function CartDrawer({
   onRemoveItem,
   onClearCart,
   onOpenCheckout,
+  recommendation,
+  incentive,
+  onAcceptRecommendation,
+  onDismissRecommendation,
+  isRecommendationDismissed,
 }: CartDrawerProps) {
   if (!isOpen) return null;
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = cart.reduce((sum, item) => sum + item.product.reference_price * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => {
+    const price = item.discountedPrice ?? item.product.reference_price;
+    return sum + price * item.quantity;
+  }, 0);
+
+  const standardSubtotal = cart.reduce(
+    (sum, item) => sum + item.product.reference_price * item.quantity,
+    0
+  );
+  const totalSavings = Math.max(0, standardSubtotal - subtotal);
+
+  // Check if recommended item is already in cart
+  const isRecommendedItemInCart = recommendation
+    ? cart.some((i) => i.product.id === recommendation.product_id)
+    : false;
+
+  const showRecommendation =
+    recommendation !== null && !isRecommendationDismissed && !isRecommendedItemInCart;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -75,71 +103,108 @@ export function CartDrawer({
                 </button>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
-                {cart.map((item) => {
-                  const lineTotal = item.product.reference_price * item.quantity;
-                  return (
-                    <div key={item.product.id} className="py-3.5 flex items-start space-x-3">
-                      {/* Fixed Aspect Thumbnail */}
-                      <img
-                        src={item.product.image_url}
-                        alt={item.product.name}
-                        className="w-16 h-16 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
-                        onError={(e) => {
-                          e.currentTarget.src =
-                            'https://images.unsplash.com/photo-1526738549149-8e07eca6c147?auto=format&fit=crop&w=600&q=80';
-                        }}
-                      />
+              <div className="space-y-4">
+                <div className="divide-y divide-slate-100">
+                  {cart.map((item) => {
+                    const unitPrice = item.discountedPrice ?? item.product.reference_price;
+                    const lineTotal = unitPrice * item.quantity;
+                    const hasDiscount =
+                      item.discountedPrice !== undefined &&
+                      item.discountedPrice < item.product.reference_price;
 
-                      {/* Info & Controls */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between">
-                          <h4 className="text-xs font-semibold text-slate-900 truncate pr-2">
-                            {item.product.name}
-                          </h4>
-                          <button
-                            onClick={() => onRemoveItem(item.product.id)}
-                            className="text-slate-400 hover:text-red-500 p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 rounded"
-                            aria-label={`Remove ${item.product.name}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          ${item.product.reference_price.toFixed(2)} each · {item.product.category}
-                        </p>
+                    return (
+                      <div key={item.product.id} className="py-3.5 flex items-start space-x-3">
+                        {/* Fixed Aspect Thumbnail */}
+                        <img
+                          src={item.product.image_url}
+                          alt={item.product.name}
+                          className="w-16 h-16 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                          onError={(e) => {
+                            e.currentTarget.src =
+                              'https://images.unsplash.com/photo-1526738549149-8e07eca6c147?auto=format&fit=crop&w=600&q=80';
+                          }}
+                        />
 
-                        <div className="flex items-center justify-between mt-2">
-                          {/* Quantity Controls */}
-                          <div className="flex items-center border border-slate-200 rounded-md overflow-hidden bg-slate-50">
+                        {/* Info & Controls */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between">
+                            <h4 className="text-xs font-semibold text-slate-900 truncate pr-2">
+                              {item.product.name}
+                            </h4>
                             <button
-                              onClick={() => onUpdateQuantity(item.product.id, -1)}
-                              className="p-1 hover:bg-slate-200 text-slate-600 transition-colors focus:outline-none"
-                              aria-label="Decrease quantity"
+                              onClick={() => onRemoveItem(item.product.id)}
+                              className="text-slate-400 hover:text-red-500 p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 rounded"
+                              aria-label={`Remove ${item.product.name}`}
                             >
-                              <Minus className="w-3 h-3" />
-                            </button>
-                            <span className="px-2 text-xs font-semibold text-slate-800 font-mono">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => onUpdateQuantity(item.product.id, 1)}
-                              className="p-1 hover:bg-slate-200 text-slate-600 transition-colors focus:outline-none"
-                              aria-label="Increase quantity"
-                            >
-                              <Plus className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
 
-                          {/* Line Subtotal */}
-                          <span className="text-xs font-bold text-slate-900 font-mono">
-                            ${lineTotal.toFixed(2)}
-                          </span>
+                          <div className="flex items-center space-x-1.5 mt-0.5">
+                            {hasDiscount ? (
+                              <>
+                                <span className="text-xs font-bold text-emerald-700 font-mono">
+                                  ${unitPrice.toFixed(2)}
+                                </span>
+                                <span className="text-[11px] text-slate-400 line-through font-mono">
+                                  ${item.product.reference_price.toFixed(2)}
+                                </span>
+                                <span className="inline-flex items-center px-1 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                                  Bundle
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 font-mono">
+                                ${item.product.reference_price.toFixed(2)} each · {item.product.category}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between mt-2">
+                            {/* Quantity Controls */}
+                            <div className="flex items-center border border-slate-200 rounded-md overflow-hidden bg-slate-50">
+                              <button
+                                onClick={() => onUpdateQuantity(item.product.id, -1)}
+                                className="p-1 hover:bg-slate-200 text-slate-600 transition-colors focus:outline-none"
+                                aria-label="Decrease quantity"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <span className="px-2 text-xs font-semibold text-slate-800 font-mono">
+                                {item.quantity}
+                              </span>
+                              <button
+                                onClick={() => onUpdateQuantity(item.product.id, 1)}
+                                className="p-1 hover:bg-slate-200 text-slate-600 transition-colors focus:outline-none"
+                                aria-label="Increase quantity"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            {/* Line Subtotal */}
+                            <span className="text-xs font-bold text-slate-900 font-mono">
+                              ${lineTotal.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+
+                {/* FairCart Recommendation Section */}
+                {showRecommendation && (
+                  <div className="pt-2">
+                    <RecommendationCard
+                      recommendation={recommendation}
+                      incentive={incentive}
+                      onAccept={onAcceptRecommendation}
+                      onDismiss={onDismissRecommendation}
+                      isAdded={false}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -147,12 +212,23 @@ export function CartDrawer({
           {/* Drawer Footer */}
           {cart.length > 0 && (
             <div className="p-5 border-t border-slate-200 bg-slate-50/80 space-y-3">
-              {/* Subtotal */}
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600 font-medium">Cart Subtotal</span>
-                <span className="text-lg font-bold text-slate-900 font-mono">
-                  ${subtotal.toFixed(2)}
-                </span>
+              {/* Subtotal & Savings Breakdown */}
+              <div className="space-y-1">
+                {totalSavings > 0.005 && (
+                  <div className="flex items-center justify-between text-xs text-emerald-700">
+                    <span className="flex items-center space-x-1 font-medium">
+                      <Tag className="w-3 h-3" />
+                      <span>Bundle Discount Applied</span>
+                    </span>
+                    <span className="font-mono font-bold">-${totalSavings.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600 font-medium">Cart Subtotal</span>
+                  <span className="text-lg font-bold text-slate-900 font-mono">
+                    ${subtotal.toFixed(2)}
+                  </span>
+                </div>
               </div>
 
               {/* Ethical Commerce Trust Banner */}

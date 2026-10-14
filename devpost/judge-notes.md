@@ -306,11 +306,36 @@
 
 - **Status:** **Implemented & Tested (in Milestone 2)**.
 
-
-
 ---
 
+### DEC-016: Decision Engine Implementation, Integer-Cent Precision, and Option 1 Fallback
 
+- **What We Decided:**
+  1. Built Engine A (`recommender.py`), Engine B (`optimizer.py`), and Engine C (`orchestrator.py`) under `backend/app/engine/`.
+  2. Implemented Option 1 behavior: when Engine B returns `NO_OFFER` due to margin floor constraints, Engine A continues recommending the compatible accessory at standard reference price with the restrained disclosure *"Standard price · No discount applied"*, zero crossed-out prices, and zero artificial pressure.
+  3. Enforced integer-cent arithmetic (`reference_price_cents`, `cogs_cents`) internally across domain entities and optimizer math to eliminate floating-point rounding errors and division-by-zero crashes.
+  4. Enforced strict financial invariants:
+     - Basket gross margin floor: $\text{gross\_margin} \ge \text{margin\_floor}$ across the entire affected basket.
+     - Price ceiling: $\text{final\_price} \le \text{reference\_price}$.
+     - Non-negative customer savings: $\text{savings} \ge 0$.
+     - Boundary protections: zero or negative prices safely force $\text{NO\_OFFER}$ and $0.0$ margin.
+     - Non-double-counting of discounts in contribution profit calculations.
+  5. Mounted `POST /api/v1/decision` with synchronous, 100% local execution (< 25ms SLA, measured ~3.5ms).
+  6. Implemented `RecommendationCard.tsx` in React with two distinct visual states (Bundle Deal with savings badge vs. Standard Price with factual disclosure), "Why this item?" expandable transparency drawer, and wired it into both Storefront and Cart Drawer.
+
+- **Why We Decided It:** Solves the core e-commerce dilemma of either offering margin-cannibalizing blanket discounts or offering nothing. Keeps customer recommendations useful and relevant while ensuring the merchant never loses money on unprofitable incentives.
+
+- **Alternatives Considered:**
+  - Hiding the recommendation entirely when no discount is eligible. Rejected because the shopper benefits from seeing compatible accessories (Option 1).
+  - Floating-point prices (`float`). Rejected due to IEEE-754 rounding inaccuracies (`$19.999999999999996`).
+
+- **Impact:** 21/21 backend tests passing (including margin floor bounds, discount cap caps, zero revenue guards, and latency benchmarks). Frontend builds cleanly and displays live bundle discounts ($20.00 instead of $25.00, saving $5.00) in both the Storefront and the Cart Drawer.
+
+- **How to Explain to Judges:** "When you add a mechanical keyboard to your cart, FairCart AI doesn't give you a blanket 15% off everything. It finds the matching wrist rest, checks if the store can afford a 20% discount without violating its 20% gross margin floor, and shows you the math right in the cart drawer. If the store can't afford a discount, it still recommends the item at standard price without fake countdowns or pressure."
+
+- **Status:** **Implemented & Tested (in Milestone 3)**.
+
+---
 
 ## 2. Pending Decisions
 
@@ -402,22 +427,22 @@
 | **Storefront & Category Filters** | PRD §2 (View 1) | **Implemented (React)** | **Passed (Dynamic categories & search)** |
 | **Simulated Zero-Payment Checkout** | PRD §1.6 | **Implemented (React Modal)** | **Passed (Itemized receipt & reset)** |
 | **Merchant Console Scaffold** | PRD §2 (View 2) | **Implemented (React Preview)** | **Passed (Catalog stats & sliders)** |
-| **Engine A: Content Recommender** | PRD §4.B | Planned (Milestone 2B / 3) | Not Run |
-| **Engine B: Margin-Constrained Optimizer** | PRD §4.C | Planned (Milestone 2B / 3) | Not Run |
-| **Engine C: Decision API (`/api/v1/decision`)**| PRD §4.C | Planned (Milestone 2B / 3) | Not Run |
-| **Gemini Explanation & Copy** | PRD §4.E | Planned (Milestone 3) | Not Run |
-| **Deterministic Offline Fallback** | PRD §4.E | Planned (Milestone 3) | Not Run |
-| **Transparent Shopper Offer Card** | PRD §4.D | Planned (Milestone 2B / 3) | Not Run |
-| **"How Offers Work" Disclosure Modal** | PRD §1.5 | Planned (Milestone 3) | Not Run |
-| **Merchant Policy Sliders (Interactive)** | PRD §2 | Planned (Milestone 4) | Not Run |
-| **Live Decision Audit Log Table** | PRD §2 | Planned (Milestone 4) | Not Run |
-| **3-Policy Synthetic Simulation Engine**| PRD §4.F | Planned (Milestone 4) | Not Run |
-| **Automated Financial Invariant Tests** | PRD §7 | Planned (Milestone 2B / 3) | Not Run |
+| **Engine A: Content Recommender** | PRD §4.B | **Implemented (`recommender.py`)** | **Passed (Affinity & stock tests)** |
+| **Engine B: Margin-Constrained Optimizer** | PRD §4.C | **Implemented (`optimizer.py`)** | **Passed (Integer cents & margin floor)** |
+| **Engine C: Decision API (`/api/v1/decision`)**| PRD §4.C | **Implemented (`orchestrator.py`)** | **Passed (Synchronous < 25ms SLA)** |
+| **Gemini Explanation & Copy** | PRD §4.E | Planned (Milestone 4) | Not Run |
+| **Deterministic Offline Fallback** | PRD §4.E | **Implemented (`orchestrator.py`)** | **Passed (Option 1 factual copy)** |
+| **Transparent Shopper Offer Card** | PRD §4.D | **Implemented (`RecommendationCard.tsx`)** | **Passed (CDP screenshots verified)** |
+| **"How Offers Work" Disclosure Modal** | PRD §1.5 | Planned (Milestone 4) | Not Run |
+| **Merchant Policy Sliders (Interactive)** | PRD §2 | Planned (Milestone 5) | Not Run |
+| **Live Decision Audit Log Table** | PRD §2 | Planned (Milestone 5) | Not Run |
+| **3-Policy Synthetic Simulation Engine**| PRD §4.F | Planned (Milestone 5) | Not Run |
+| **Automated Financial Invariant Tests** | PRD §7 | **Implemented (`test_decision_engine.py`)** | **Passed (21/21 suite tests)** |
 
 ---
 
 ## 5. Testing & Verification Evidence
-*Status: Milestone 1 Foundation & Milestone 2 Catalog Storefront executed and verified.*
+*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, and Milestone 3 Decision Engine executed and verified.*
 
 - [x] **Database Initialization & Seeding:** `test_database_has_twenty_products` passed (verified exactly 20 items loaded into `faircart.db`).
 - [x] **Product Financial Positivity & COGS Invariant:** `test_product_schema_and_financial_positivity` passed (verified 0 < COGS < RefPrice and positive inventory for all 20 products).
@@ -428,17 +453,21 @@
 - [x] **Interactive Cart Drawer & Quantity State:** Implemented in `CartDrawer.tsx` with dynamic item addition, increment/decrement controls, live subtotal computation, and empty-state messaging.
 - [x] **Responsive Storefront & Filters:** Implemented in `StorefrontView.tsx` with dynamic category pills, real-time client-side search, skeleton loading state, and error recovery retry action.
 - [x] **Simulated Zero-Payment Checkout:** Implemented in `CheckoutModal.tsx` providing an itemized order receipt, transparent zero-payment disclosure, and cart reset.
-- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed in 3.85s with zero TypeScript compilation errors, compiling 1,597 modules and outputting a dedicated 25.1 kB CSS bundle (`dist/assets/index-*.css`).
+- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed in 11.42s with zero TypeScript compilation errors, compiling 1,598 modules and outputting a dedicated 26.5 kB CSS bundle (`dist/assets/index-*.css`).
 - [x] **Tailwind PostCSS Pipeline Hookup:** Fixed root cause by creating `frontend/src/index.css` with `@tailwind` directives and importing it in `main.tsx`. Verified that the Vite build now outputs full stylesheets.
 - [x] **Headless Edge Desktop Visual Verification:** Captured and visually inspected `screenshot_desktop.png` (1280x900 viewport) via CDP. Verified 4-column aligned product grid, fixed-aspect image containers (`h-44 object-cover`), clean typography hierarchy, and FastAPI 20-item status badge.
-- [x] **Headless Edge Mobile Visual Verification:** Captured and visually inspected `screenshot_mobile.png` (390x844 viewport, mobile touch emulation) via CDP. Verified responsive header (Brand, Store/Console toggle, and Cart button all visible), horizontal category scrollbar hidden, hero section wraps cleanly, and product cards fit 100% of the mobile viewport.
+- [x] **Headless Edge Mobile Visual Verification:** Captured and visually inspected `screenshot_mobile.png` (390x844 viewport, mobile touch emulation) via CDP. Verified responsive header, horizontal category scrollbar hidden, hero section wraps cleanly, and product cards fit 100% of the mobile viewport.
 - [x] **Cart Drawer Interaction Verification:** Captured and visually inspected `screenshot_cart_open.png` via automated item addition. Verified backdrop blur, 64x64px item thumbnail, quantity increment/decrement controls, line item total, subtotal ($80.00), ethical trust banner, and checkout simulation CTA.
-- [x] **Merchant Console Preview Verification:** Captured and visually inspected `screenshot_merchant.png` via hash routing (`#merchant`). Verified live catalog statistics (20 items, $50.75 avg price, $12-$140 range), category inventory table, and locked policy sliders preview for Milestone 4.
-- [x] **Consolidated Backend Test Suite:** All 10 unit tests in `backend/tests/` passed in 0.146s (`test_foundation.py` + `test_catalog_api.py`).
-- [ ] Financial Invariant Test: `final_price <= reference_price` (Scheduled for Milestone 2B/3).
-- [ ] Basket Gross Margin Floor Test: `margin >= floor` (Scheduled for Milestone 2B/3).
-- [ ] Gemini Fallback Resilience Test: (Scheduled for Milestone 3).
-- [ ] Simulation Reproducibility Test: (Scheduled for Milestone 4).
+- [x] **Merchant Console Preview Verification:** Captured and visually inspected `screenshot_merchant.png` via hash routing (`#merchant`). Verified live catalog statistics (20 items, $50.75 avg price, $12-$140 range), category inventory table, and locked policy sliders preview.
+- [x] **Engine A Recommender Invariants:** `test_recommender_never_recommends_item_already_in_cart`, `test_recommender_filters_out_of_stock_items`, and `test_recommender_prioritizes_explicit_complementary_link` passed cleanly.
+- [x] **Engine B Financial Invariants:** `test_optimizer_strictly_enforces_gross_margin_floor` (fails discounts that breach margin floor), `test_optimizer_respects_discount_cap` (caps max discount), `test_optimizer_price_ceiling_and_non_negative_savings` (`final_price <= ref_price`, `savings >= 0`), and `test_optimizer_zero_revenue_safeguard` passed.
+- [x] **Engine C End-to-End Orchestrator & API:** `test_orchestrator_sub_25ms_latency` (< 25ms SLA, recorded 3.5ms on live API), `test_orchestrator_empty_cart_returns_safe_no_offer`, `test_independent_recommendation_and_incentive` (Option 1 verified: candidate shown with *"Standard price · No discount applied"* when margin floor is violated), and `test_api_endpoint_post_decision` passed.
+- [x] **Consolidated Backend Test Suite:** All 21 unit tests in `backend/tests/` passed in 0.426s (`test_foundation.py` + `test_catalog_api.py` + `test_decision_engine.py`).
+- [x] **Live Storefront Recommendation Card Verification:** Captured and visually inspected `screenshot_m3_storefront_recommendation.png` via CDP. Verified prompt display of `RECOMMENDED BUNDLE DEAL` on `Padded Memory Foam Wrist Rest` with `$20.00` price, `$25.00` strikethrough, `Save $5.00 (20% OFF)` badge, and `+ Add Bundle for $20.00` CTA.
+- [x] **Live Cart Drawer Bundle Offer Verification:** Captured and visually inspected `screenshot_m3_cart_recommendation.png` via CDP. Verified seamless rendering of the recommendation card inside the open cart drawer alongside cart items.
+- [x] **Transparency Disclosure Verification:** Captured and visually inspected `screenshot_m3_transparency_expanded.png` via CDP. Verified expandable "Why this item?" drawer detailing factual affinity (75%) and economic margin floor compliance (satisfies 20% floor).
+- [ ] Gemini Asynchronous Service & Fallback: (Scheduled for Milestone 4).
+- [ ] 3-Policy Simulation Comparator: (Scheduled for Milestone 5).
 
 ---
 

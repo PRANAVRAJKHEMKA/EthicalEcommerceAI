@@ -1,6 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Product, CartItem, HealthStatus } from './types.ts';
-import { fetchHealth, fetchCatalog } from './api.ts';
+import {
+  Product,
+  CartItem,
+  HealthStatus,
+  DecisionResponse,
+  RecommendationResponse,
+  IncentiveResponse,
+} from './types.ts';
+import { fetchHealth, fetchCatalog, fetchDecision } from './api.ts';
 import { Header } from './components/Header.tsx';
 import { CartDrawer } from './components/CartDrawer.tsx';
 import { CheckoutModal } from './components/CheckoutModal.tsx';
@@ -20,6 +27,7 @@ export default function App() {
       window.location.hash = tab === 'merchant' ? '#merchant' : '#store';
     }
   };
+
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(true);
 
@@ -30,6 +38,10 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // Decision Engine state
+  const [decision, setDecision] = useState<DecisionResponse | null>(null);
+  const [dismissedRecommendationId, setDismissedRecommendationId] = useState<string | null>(null);
 
   // Load health check on mount
   const checkHealth = useCallback(async () => {
@@ -64,6 +76,42 @@ export default function App() {
     checkHealth();
     loadProducts();
   }, [checkHealth, loadProducts]);
+
+  // Query Decision Engine whenever cart contents change
+  useEffect(() => {
+    if (cart.length === 0) {
+      setDecision(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    fetchDecision({
+      session_id: 'sess-shopper',
+      cart_items: cart.map((i) => ({
+        product_id: i.product.id,
+        quantity: i.quantity,
+      })),
+      dwell_time_seconds: 30,
+      margin_floor: 0.20,
+      discount_cap: 0.20,
+    })
+      .then((data) => {
+        if (isMounted) {
+          setDecision(data);
+        }
+      })
+      .catch((err) => {
+        console.error('Decision pipeline error:', err);
+        if (isMounted) {
+          setDecision(null);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [cart]);
 
   // Cart operations
   const handleAddToCart = (product: Product) => {
@@ -100,10 +148,56 @@ export default function App() {
 
   const handleClearCart = () => {
     setCart([]);
+    setDismissedRecommendationId(null);
   };
 
   const handleCompleteOrder = () => {
     setCart([]);
+    setDismissedRecommendationId(null);
+  };
+
+  // Handle accepting a complementary recommendation
+  const handleAcceptRecommendation = (
+    rec: RecommendationResponse,
+    incentive: IncentiveResponse | null
+  ) => {
+    const productObj = products.find((p) => p.id === rec.product_id);
+    if (!productObj) return;
+
+    const hasOffer = incentive?.is_offered ?? false;
+    const finalPrice = hasOffer ? incentive!.final_price : undefined;
+    const discountPct = hasOffer ? incentive!.discount_percentage : undefined;
+
+    setCart((prev) => {
+      const existing = prev.find((item) => item.product.id === productObj.id);
+      if (existing) {
+        return prev.map((item) =>
+          item.product.id === productObj.id
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+                discountedPrice: finalPrice,
+                appliedDiscountPct: discountPct,
+              }
+            : item
+        );
+      }
+      return [
+        ...prev,
+        {
+          product: productObj,
+          quantity: 1,
+          discountedPrice: finalPrice,
+          appliedDiscountPct: discountPct,
+        },
+      ];
+    });
+  };
+
+  const handleDismissRecommendation = () => {
+    if (decision?.recommendation) {
+      setDismissedRecommendationId(decision.recommendation.product_id);
+    }
   };
 
   // Fast lookup of cart quantities by product id
@@ -119,6 +213,13 @@ export default function App() {
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
     [cart]
   );
+
+  const activeRecommendation =
+    decision &&
+    decision.recommendation &&
+    decision.recommendation.product_id !== dismissedRecommendationId
+      ? decision.recommendation
+      : null;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col justify-between overflow-x-hidden">
@@ -143,6 +244,13 @@ export default function App() {
               onRetry={loadProducts}
               onAddToCart={handleAddToCart}
               cartQuantities={cartQuantities}
+              recommendation={activeRecommendation}
+              incentive={decision?.incentive ?? null}
+              onAcceptRecommendation={handleAcceptRecommendation}
+              onDismissRecommendation={handleDismissRecommendation}
+              isRecommendationDismissed={
+                dismissedRecommendationId === decision?.recommendation?.product_id
+              }
             />
           ) : (
             <MerchantView products={products} />
@@ -162,6 +270,13 @@ export default function App() {
           setIsCartOpen(false);
           setIsCheckoutOpen(true);
         }}
+        recommendation={activeRecommendation}
+        incentive={decision?.incentive ?? null}
+        onAcceptRecommendation={handleAcceptRecommendation}
+        onDismissRecommendation={handleDismissRecommendation}
+        isRecommendationDismissed={
+          dismissedRecommendationId === decision?.recommendation?.product_id
+        }
       />
 
       {/* Simulated Checkout Modal */}

@@ -28,14 +28,14 @@ Build mode: learn
   Verify (mechanical): Query `GET /api/v1/catalog`, verify React dev server loads products cleanly, inspect visual layout in desktop/mobile viewports via CDP screenshots.
   Commit: `Milestone 2: Catalog API and interactive shopper storefront with verified visual styling`
 
-- [ ] **3. Local Decision Engine & Transparent Offer Card (Milestone 2B)**
+- [x] **3. Local Decision Engine & Transparent Offer Card (Milestone 3)**
   Becomes usable: Adding an item to the cart immediately triggers Engine A & B via `POST /api/v1/decision`, rendering either an eligible bundle discount or standard price card with transparent math.
   Why now: The unique kernel of FairCart AI—relevance + economic margin optimization.
   PRD ref: `prd.md > Feature B, C, D`
   Spec ref: `spec.md > 3. Mathematical Model`, `spec.md > 5.3 /decision`, `spec.md > 6. Component 2, 3, 4`
   Build: Implement Engine A (Recommender), Engine B (Economic Optimizer), Engine C (Orchestrator), and the React `RecommendationCard`.
   Verify (mechanical): Run invariant tests verifying `gross_margin >= floor` and `final_price <= ref_price`.
-  Commit: `Milestone 2B: Implement local decision engine and transparent offer card`
+  Commit: `Milestone 3: Local decision engine, margin-preserving optimizer, and transparent offer card`
 
 - [ ] **4. Asynchronous Gemini Copy & Transparency Modal (Milestone 3)**
   Becomes usable: Recommendation card asynchronously enriches its copy via Gemini, with instant offline template fallback if the key is missing.
@@ -65,7 +65,7 @@ Build mode: learn
   Commit: `Milestone 5: Implement simulated checkout and verify end-to-end system`
 
 ## Hands-on Checkpoints
-- [ ] Checkpoint 1 (After Slice 1): Verify backend health check and database seeding.
-- [ ] Checkpoint 2 (After Slice 3): Try shopping in the storefront and verify that margin floors prevent invalid discounts.
+- [x] Checkpoint 1 (After Slice 1): Verify backend health check and database seeding.
+- [x] Checkpoint 2 (After Slice 3): Try shopping in the storefront and verify that margin floors prevent invalid discounts.
 - [ ] Checkpoint 3 (After Slice 5): Run the 3-policy simulation and review comparative metrics.
 - [ ] Final Review (After Slice 6): Walk through the complete 2-minute demo script before packaging for Devpost.

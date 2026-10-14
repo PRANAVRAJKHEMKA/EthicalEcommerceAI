@@ -1,4 +1,4 @@
-import { CheckCircle2, X, ShoppingBag, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, X, ShoppingBag, ShieldCheck, Tag } from 'lucide-react';
 import { CartItem } from '../types.ts';
 
 interface CheckoutModalProps {
@@ -16,10 +16,24 @@ export function CheckoutModal({
 }: CheckoutModalProps) {
   if (!isOpen) return null;
 
-  const subtotal = cart.reduce((sum, item) => sum + item.product.reference_price * item.quantity, 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => {
+    const price = item.discountedPrice ?? item.product.reference_price;
+    return sum + price * item.quantity;
+  }, 0);
+
+  const standardSubtotal = cart.reduce(
+    (sum, item) => sum + item.product.reference_price * item.quantity,
+    0
+  );
+  const totalSavings = Math.max(0, standardSubtotal - subtotal);
+
   const orderId = `FC-${Math.floor(100000 + Math.random() * 900000)}`;
-  const orderTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const orderTimestamp = new Date().toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 
   const handleFinish = () => {
     onCompleteOrder();
@@ -45,7 +59,9 @@ export function CheckoutModal({
               </div>
               <div>
                 <h3 className="text-base font-bold leading-6 text-white">Demo Order Confirmed</h3>
-                <p className="text-xs text-slate-400 font-mono">Order ID: #{orderId} · {orderTimestamp}</p>
+                <p className="text-xs text-slate-400 font-mono">
+                  Order ID: #{orderId} · {orderTimestamp}
+                </p>
               </div>
             </div>
             <button
@@ -72,20 +88,38 @@ export function CheckoutModal({
                 Order Items ({totalItems})
               </h4>
               <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
-                {cart.map((item) => (
-                  <div key={item.product.id} className="p-3 flex items-center justify-between text-xs">
-                    <div className="flex items-center space-x-2.5 min-w-0 pr-2">
-                      <ShoppingBag className="w-4 h-4 text-slate-400 shrink-0" />
-                      <div className="truncate">
-                        <span className="font-semibold text-slate-900">{item.product.name}</span>
-                        <span className="text-slate-400 ml-1.5">x{item.quantity}</span>
+                {cart.map((item) => {
+                  const unitPrice = item.discountedPrice ?? item.product.reference_price;
+                  const lineTotal = unitPrice * item.quantity;
+                  const isDiscounted =
+                    item.discountedPrice !== undefined &&
+                    item.discountedPrice < item.product.reference_price;
+
+                  return (
+                    <div
+                      key={item.product.id}
+                      className="p-3 flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+                        <ShoppingBag className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="truncate">
+                          <span className="font-semibold text-slate-900">
+                            {item.product.name}
+                          </span>
+                          <span className="text-slate-400 ml-1.5">x{item.quantity}</span>
+                          {isDiscounted && (
+                            <span className="ml-2 text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.5 rounded">
+                              Bundle Deal
+                            </span>
+                          )}
+                        </div>
                       </div>
+                      <span className="font-mono font-semibold text-slate-800 shrink-0">
+                        ${lineTotal.toFixed(2)}
+                      </span>
                     </div>
-                    <span className="font-mono font-semibold text-slate-800 shrink-0">
-                      ${(item.product.reference_price * item.quantity).toFixed(2)}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -93,8 +127,19 @@ export function CheckoutModal({
             <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-xs border border-slate-200">
               <div className="flex justify-between text-slate-600">
                 <span>Items Subtotal</span>
-                <span className="font-mono font-semibold text-slate-900">${subtotal.toFixed(2)}</span>
+                <span className="font-mono font-semibold text-slate-900">
+                  ${standardSubtotal.toFixed(2)}
+                </span>
               </div>
+              {totalSavings > 0.005 && (
+                <div className="flex justify-between text-emerald-700 font-medium">
+                  <span className="flex items-center space-x-1">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>FairCart Bundle Savings</span>
+                  </span>
+                  <span className="font-mono font-bold">-${totalSavings.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-slate-600">
                 <span>Shipping (Standard Ground)</span>
                 <span className="text-emerald-700 font-semibold">$0.00 (Demo Free)</span>
@@ -105,7 +150,9 @@ export function CheckoutModal({
               </div>
               <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-sm text-slate-900">
                 <span>Total Simulated Value</span>
-                <span className="font-mono text-base text-indigo-700">${subtotal.toFixed(2)}</span>
+                <span className="font-mono text-base text-indigo-700">
+                  ${subtotal.toFixed(2)}
+                </span>
               </div>
             </div>
           </div>

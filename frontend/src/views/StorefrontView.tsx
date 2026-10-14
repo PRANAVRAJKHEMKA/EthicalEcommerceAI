@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Search, AlertCircle, RefreshCw, Layers, ShieldCheck, Cpu } from 'lucide-react';
-import { Product } from '../types.ts';
+import { Product, RecommendationResponse, IncentiveResponse } from '../types.ts';
 import { ProductCard } from '../components/ProductCard.tsx';
+import { RecommendationCard } from '../components/RecommendationCard.tsx';
 
 interface StorefrontViewProps {
   products: Product[];
@@ -10,6 +11,11 @@ interface StorefrontViewProps {
   onRetry: () => void;
   onAddToCart: (product: Product) => void;
   cartQuantities: { [productId: string]: number };
+  recommendation?: RecommendationResponse | null;
+  incentive?: IncentiveResponse | null;
+  onAcceptRecommendation?: (rec: RecommendationResponse, inc: IncentiveResponse | null) => void;
+  onDismissRecommendation?: () => void;
+  isRecommendationDismissed?: boolean;
 }
 
 export function StorefrontView({
@@ -19,6 +25,11 @@ export function StorefrontView({
   onRetry,
   onAddToCart,
   cartQuantities,
+  recommendation,
+  incentive,
+  onAcceptRecommendation,
+  onDismissRecommendation,
+  isRecommendationDismissed = false,
 }: StorefrontViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -41,6 +52,13 @@ export function StorefrontView({
       return matchesCategory && matchesSearch;
     });
   }, [products, selectedCategory, searchQuery]);
+
+  const showRecommendationBanner =
+    Boolean(recommendation) &&
+    !isRecommendationDismissed &&
+    Boolean(onAcceptRecommendation) &&
+    Boolean(onDismissRecommendation) &&
+    !(cartQuantities[recommendation!.product_id] > 0);
 
   return (
     <div className="w-full min-w-0 space-y-6 pb-16">
@@ -78,6 +96,19 @@ export function StorefrontView({
           </div>
         </div>
       </section>
+
+      {/* Dynamic Recommendation Banner (surfaced when cart has items) */}
+      {showRecommendationBanner && (
+        <section className="w-full">
+          <RecommendationCard
+            recommendation={recommendation!}
+            incentive={incentive ?? null}
+            onAccept={onAcceptRecommendation!}
+            onDismiss={onDismissRecommendation!}
+            isAdded={false}
+          />
+        </section>
+      )}
 
       {/* Catalog Search & Filter Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 w-full min-w-0">

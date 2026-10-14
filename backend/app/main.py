@@ -4,7 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.config import settings
 from backend.app.db.database import init_db
 from backend.app.db.repository import CatalogRepository
-from backend.app.models.schemas import HealthResponse, Product
+from backend.app.engine import DecisionOrchestrator
+from backend.app.models.schemas import (
+    DecisionRequest,
+    DecisionResponse,
+    HealthResponse,
+    Product,
+)
 from fastapi import HTTPException
 
 # Initialize FastAPI application
@@ -58,6 +64,17 @@ def get_catalog() -> list[Product]:
         return products
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve catalog from database: {str(e)}")
+
+@app.post("/api/v1/decision", response_model=DecisionResponse, tags=["Decision Engine"])
+def create_decision(request: DecisionRequest) -> DecisionResponse:
+    """Evaluates the active cart context to produce an explainable complementary recommendation
+    and margin-preserving incentive optimization. Synchronous and deterministic (< 25ms).
+    """
+    try:
+        orchestrator = DecisionOrchestrator()
+        return orchestrator.process_decision(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Decision pipeline failed: {str(e)}")
 
 @app.get("/", tags=["Root"])
 def root_status():
