@@ -1,4 +1,4 @@
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, ShieldCheck } from 'lucide-react';
 import { HealthStatus } from '../types.ts';
 
 interface HeaderProps {
@@ -19,48 +19,55 @@ export function Header({
   loadingHealth,
 }: HeaderProps) {
   return (
-    <header className="border-b border-slate-200 bg-white/95 backdrop-blur-md sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand & Tagline */}
-        <div className="flex items-center space-x-3">
-          <div className="flex items-baseline space-x-1 cursor-pointer" onClick={() => setActiveTab('store')}>
-            <span className="text-xl font-black tracking-tight text-slate-900">
-              FairCart <span className="text-emerald-600">AI</span>
+    <header className="border-b border-slate-200 bg-white/95 backdrop-blur-md sticky top-0 z-40 shadow-xs">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
+        {/* Brand */}
+        <div className="flex items-center space-x-1.5 shrink-0">
+          <button
+            onClick={() => setActiveTab('store')}
+            className="flex items-baseline cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded p-1 -m-1"
+            aria-label="FairCart AI Home"
+          >
+            <span className="text-base sm:text-lg font-black tracking-tight text-slate-900">
+              FairCart <span className="text-indigo-600">AI</span>
             </span>
-          </div>
-          <span className="hidden md:inline-flex items-center text-xs bg-emerald-50 text-emerald-800 font-semibold px-2.5 py-0.5 rounded-full border border-emerald-200">
-            Ethical Commerce
+          </button>
+          <span className="hidden md:inline-flex items-center space-x-1 text-[11px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-md border border-slate-200">
+            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+            <span>Ethical Engine</span>
           </span>
         </div>
 
-        {/* View Switcher Tabs */}
-        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-          <button
-            onClick={() => setActiveTab('store')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-              activeTab === 'store'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Shop Store
-          </button>
-          <button
-            onClick={() => setActiveTab('merchant')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-              activeTab === 'merchant'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Merchant Console
-          </button>
-        </div>
+        {/* Right Controls: Switcher + Health + Cart */}
+        <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+          {/* View Switcher Tabs */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setActiveTab('store')}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                activeTab === 'store'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span className="sm:hidden">Store</span>
+              <span className="hidden sm:inline">Shop Store</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('merchant')}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                activeTab === 'merchant'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span className="sm:hidden">Console</span>
+              <span className="hidden sm:inline">Merchant Console</span>
+            </button>
+          </div>
 
-        {/* Action Controls: Status Pill & Cart Trigger */}
-        <div className="flex items-center space-x-4">
-          {/* Health Pill */}
-          <div className="hidden sm:flex items-center space-x-2 text-xs py-1 px-2.5 rounded-md bg-slate-50 border border-slate-200">
+          {/* Health Pill (Desktop only) */}
+          <div className="hidden lg:flex items-center space-x-2 text-xs py-1 px-2.5 rounded-lg bg-slate-50 border border-slate-200">
             <span
               className={`h-2 w-2 rounded-full ${
                 health && health.status === 'healthy' ? 'bg-emerald-500' : 'bg-amber-400'
@@ -78,13 +85,13 @@ export function Header({
           {/* Cart Button */}
           <button
             onClick={openCart}
-            className="relative flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-            aria-label="Open Cart"
+            className="relative inline-flex items-center space-x-1 bg-indigo-600 hover:bg-indigo-700 text-white p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 shrink-0"
+            aria-label="Open cart"
           >
-            <ShoppingCart className="w-4 h-4" />
+            <ShoppingCart className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Cart</span>
             {cartCount > 0 && (
-              <span className="inline-flex items-center justify-center bg-white text-indigo-700 text-xs font-bold rounded-full h-5 min-w-5 px-1 ml-1">
+              <span className="inline-flex items-center justify-center bg-white text-indigo-700 text-[10px] font-bold rounded-full h-4 min-w-4 px-1 ml-0.5">
                 {cartCount}
               </span>
             )}

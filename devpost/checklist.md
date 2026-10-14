@@ -24,9 +24,9 @@ Build mode: learn
   Why now: Connects frontend to backend with real data before adding recommendation intelligence.
   PRD ref: `prd.md > 2. Screens and Layout > View 1`, `prd.md > Feature A`
   Spec ref: `spec.md > 5.2 /catalog`, `spec.md > 6. Component 1 & 7`
-  Build: Implement `GET /api/v1/catalog`, create Vite/React storefront with product cards and cart drawer.
-  Verify (mechanical): Query `GET /api/v1/catalog`, verify React dev server loads products cleanly.
-  Commit: `Milestone 2: Catalog API and interactive shopper storefront`
+  Build: Implement `GET /api/v1/catalog`, create Vite/React storefront with product cards, cart drawer, Tailwind CSS entrypoint, and responsive typography/spacing.
+  Verify (mechanical): Query `GET /api/v1/catalog`, verify React dev server loads products cleanly, inspect visual layout in desktop/mobile viewports via CDP screenshots.
+  Commit: `Milestone 2: Catalog API and interactive shopper storefront with verified visual styling`
 
 - [ ] **3. Local Decision Engine & Transparent Offer Card (Milestone 2B)**
   Becomes usable: Adding an item to the cart immediately triggers Engine A & B via `POST /api/v1/decision`, rendering either an eligible bundle discount or standard price card with transparent math.

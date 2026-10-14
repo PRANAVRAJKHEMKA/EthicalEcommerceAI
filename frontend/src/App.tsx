@@ -8,7 +8,18 @@ import { StorefrontView } from './views/StorefrontView.tsx';
 import { MerchantView } from './views/MerchantView.tsx';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'store' | 'merchant'>('store');
+  const [activeTab, setActiveTabState] = useState<'store' | 'merchant'>(() => {
+    return typeof window !== 'undefined' && window.location.hash === '#merchant'
+      ? 'merchant'
+      : 'store';
+  });
+
+  const setActiveTab = (tab: 'store' | 'merchant') => {
+    setActiveTabState(tab);
+    if (typeof window !== 'undefined') {
+      window.location.hash = tab === 'merchant' ? '#merchant' : '#store';
+    }
+  };
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(true);
 
@@ -110,7 +121,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col justify-between">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col justify-between overflow-x-hidden">
       <div>
         {/* Navigation Header */}
         <Header
@@ -123,7 +134,7 @@ export default function App() {
         />
 
         {/* Main Application Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 w-full min-w-0">
           {activeTab === 'store' ? (
             <StorefrontView
               products={products}
@@ -163,13 +174,13 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-6 mt-12 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2.5">
           <div className="flex items-center space-x-2">
             <span className="font-semibold text-slate-800">FairCart AI</span>
             <span>·</span>
             <span>Devpost "Build With AI: Basics"</span>
           </div>
-          <div className="text-slate-400">
+          <div className="text-slate-400 text-center sm:text-right">
             Explainable, Margin-Preserving E-Commerce · Sub-25ms Local Decisions · Powered by Gemini
           </div>
         </div>

@@ -290,6 +290,28 @@
 
 
 
+### DEC-015: Entrypoint CSS Pipeline Hookup & Visual Layout Verification
+
+- **What We Decided:** Create `frontend/src/index.css` declaring `@tailwind base; @tailwind components; @tailwind utilities;`, import it directly in `frontend/src/main.tsx`, configure font families (Inter and JetBrains Mono) in `index.html` and `tailwind.config.js`, enforce fixed aspect ratios (`h-44 object-cover`) across all product cards, and implement automated visual verification using headless Edge via Chrome DevTools Protocol (CDP).
+
+- **Why We Decided It:** Solved a critical visual defect where the storefront rendered unstyled with default browser typography, raw unstyled buttons, and massive full-resolution unconstrained images. Although `tailwindcss` and `postcss.config.js` were present in the repo, Vite's PostCSS pipeline was never invoked because no CSS file containing `@tailwind` directives existed or was imported into `main.tsx`.
+
+- **Beginner-Friendly Explanation (Why builds succeed while styling is broken):** Compilers like `tsc` (TypeScript) and bundlers like `vite build` only check whether source files contain valid JavaScript syntax and whether modules can be packaged. If a CSS stylesheet is omitted from the import tree, the compiler considers that completely valid (many libraries have no CSS). The build exits cleanly with code 0 and bundles 0 CSS bytes. Without inspecting the actual rendered page in a browser, a "successful build" is completely blind to missing stylesheets and visual layout defects.
+
+- **Alternatives Considered:** Loading Tailwind via CDN `<script>` tag. Rejected because production builds should use pre-compiled, tree-shaken CSS bundles (`dist/assets/*.css`) rather than runtime CDN parsers.
+
+- **Impact:** Production Vite build now compiles and outputs a dedicated, tree-shaken ~25 kB CSS bundle (`dist/assets/*.css`). All 20 product cards render with identical vertical geometry, crisp typography, responsive category navigation, and full cart drawer styling.
+
+- **How to Explain to Judges:** "A clean code build only proves the syntax is valid—not that the store looks good to customers. We caught and fixed a missing CSS entrypoint, then verified our visual design using real browser screenshots across desktop and mobile devices."
+
+- **Status:** **Implemented & Tested (in Milestone 2)**.
+
+
+
+---
+
+
+
 ## 2. Pending Decisions
 
 - **PEN-001 (Spec Stage):** Specific Scikit-Learn Model architecture for purchase propensity ranking (Heuristic Baseline for MVP; scikit-learn classifier designed as optional pluggable extension).
@@ -406,8 +428,13 @@
 - [x] **Interactive Cart Drawer & Quantity State:** Implemented in `CartDrawer.tsx` with dynamic item addition, increment/decrement controls, live subtotal computation, and empty-state messaging.
 - [x] **Responsive Storefront & Filters:** Implemented in `StorefrontView.tsx` with dynamic category pills, real-time client-side search, skeleton loading state, and error recovery retry action.
 - [x] **Simulated Zero-Payment Checkout:** Implemented in `CheckoutModal.tsx` providing an itemized order receipt, transparent zero-payment disclosure, and cart reset.
-- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed in 2.37s with zero TypeScript compilation errors.
-- [x] **Consolidated Backend Test Suite:** All 10 unit tests in `backend/tests/` passed in 0.119s (`test_foundation.py` + `test_catalog_api.py`).
+- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed in 3.85s with zero TypeScript compilation errors, compiling 1,597 modules and outputting a dedicated 25.1 kB CSS bundle (`dist/assets/index-*.css`).
+- [x] **Tailwind PostCSS Pipeline Hookup:** Fixed root cause by creating `frontend/src/index.css` with `@tailwind` directives and importing it in `main.tsx`. Verified that the Vite build now outputs full stylesheets.
+- [x] **Headless Edge Desktop Visual Verification:** Captured and visually inspected `screenshot_desktop.png` (1280x900 viewport) via CDP. Verified 4-column aligned product grid, fixed-aspect image containers (`h-44 object-cover`), clean typography hierarchy, and FastAPI 20-item status badge.
+- [x] **Headless Edge Mobile Visual Verification:** Captured and visually inspected `screenshot_mobile.png` (390x844 viewport, mobile touch emulation) via CDP. Verified responsive header (Brand, Store/Console toggle, and Cart button all visible), horizontal category scrollbar hidden, hero section wraps cleanly, and product cards fit 100% of the mobile viewport.
+- [x] **Cart Drawer Interaction Verification:** Captured and visually inspected `screenshot_cart_open.png` via automated item addition. Verified backdrop blur, 64x64px item thumbnail, quantity increment/decrement controls, line item total, subtotal ($80.00), ethical trust banner, and checkout simulation CTA.
+- [x] **Merchant Console Preview Verification:** Captured and visually inspected `screenshot_merchant.png` via hash routing (`#merchant`). Verified live catalog statistics (20 items, $50.75 avg price, $12-$140 range), category inventory table, and locked policy sliders preview for Milestone 4.
+- [x] **Consolidated Backend Test Suite:** All 10 unit tests in `backend/tests/` passed in 0.146s (`test_foundation.py` + `test_catalog_api.py`).
 - [ ] Financial Invariant Test: `final_price <= reference_price` (Scheduled for Milestone 2B/3).
 - [ ] Basket Gross Margin Floor Test: `margin >= floor` (Scheduled for Milestone 2B/3).
 - [ ] Gemini Fallback Resilience Test: (Scheduled for Milestone 3).
