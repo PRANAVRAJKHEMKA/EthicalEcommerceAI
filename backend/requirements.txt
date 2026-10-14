@@ -1,0 +1,11 @@
+# Core Web & API
+fastapi==0.115.7
+uvicorn==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
+httpx==0.28.1
+
+# Numerical & Simulation
+numpy==2.2.6
+
+# Note: sqlite3 and unittest are built into Python 3.12 standard library.

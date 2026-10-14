@@ -1,0 +1,30 @@
+# Devpost Learn private learning context
+/devpost/learner-profile.md
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+*.sqlite3
+*.db
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.tsbuildinfo
+
+# Editor & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
