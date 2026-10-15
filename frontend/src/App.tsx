@@ -6,6 +6,7 @@ import {
   DecisionResponse,
   RecommendationItem,
   ItemExplanation,
+  UserProfile,
 } from './types.ts';
 import {
   fetchHealth,
@@ -14,13 +15,51 @@ import {
   fetchExplanation,
   recordSessionEvent,
   clearSessionEvents,
+  fetchCurrentUser,
+  logoutUser,
+  createSimulatedOrder,
 } from './api.ts';
 import { Header } from './components/Header.tsx';
 import { CartDrawer } from './components/CartDrawer.tsx';
 import { CheckoutModal } from './components/CheckoutModal.tsx';
 import { TransparencyModal } from './components/TransparencyModal.tsx';
+import { LoginModal } from './components/LoginModal.tsx';
+import { OrderHistoryModal } from './components/OrderHistoryModal.tsx';
 import { StorefrontView } from './views/StorefrontView.tsx';
 import { MerchantView } from './views/MerchantView.tsx';
+
+// Helpers to load user-scoped cart and viewed items
+function loadUserCart(userId?: string): CartItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const key = `faircart_cart_${userId || 'guest'}`;
+    const saved = localStorage.getItem(key);
+    if (saved) return JSON.parse(saved);
+    if (!userId) {
+      const legacy = localStorage.getItem('faircart_cart');
+      if (legacy) return JSON.parse(legacy);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function loadUserViewedIds(userId?: string): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const key = `faircart_viewed_ids_${userId || 'guest'}`;
+    const saved = localStorage.getItem(key);
+    if (saved) return JSON.parse(saved);
+    if (!userId) {
+      const legacy = localStorage.getItem('faircart_viewed_ids');
+      if (legacy) return JSON.parse(legacy);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
 
 export default function App() {
   const [activeTab, setActiveTabState] = useState<'store' | 'merchant'>(() => {
@@ -43,6 +82,9 @@ export default function App() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
 
+  // Authenticated demo user state
+  const [user, setUser] = useState<UserProfile | null>(null);
+
   // Anonymous session ID persisted to sessionStorage (cleared on tab close)
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'sess-shopper';
@@ -57,16 +99,8 @@ export default function App() {
     }
   });
 
-  // Cart state persisted to localStorage
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem('faircart_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Cart state persisted to user-scoped localStorage
+  const [cart, setCart] = useState<CartItem[]>(() => loadUserCart());
 
   // Shopping Intent Context persisted to localStorage
   const [shoppingContext, setShoppingContext] = useState<string>(() => {
@@ -81,6 +115,8 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isTransparencyOpen, setIsTransparencyOpen] = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
 
   // Decision Engine state
   const [decision, setDecision] = useState<DecisionResponse | null>(null);
@@ -100,16 +136,8 @@ export default function App() {
     }
   });
 
-  // Viewed product IDs persisted to localStorage
-  const [viewedProductIds, setViewedProductIds] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem('faircart_viewed_ids');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Viewed product IDs persisted to user-scoped localStorage
+  const [viewedProductIds, setViewedProductIds] = useState<string[]>(() => loadUserViewedIds());
 
   const [decisionRevision, setDecisionRevision] = useState(0);
   const triggerDecisionFetch = useCallback(() => {
@@ -117,6 +145,50 @@ export default function App() {
   }, []);
 
   const hoverDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Incremental sequence ID guard to prevent stale asynchronous decision responses from overwriting newer recommendations
+  const decisionRequestIdRef = useRef<number>(0);
+
+  // Restore authenticated session on initial mount
+  useEffect(() => {
+    fetchCurrentUser()
+      .then((existingUser) => {
+        if (existingUser) {
+          setUser(existingUser);
+          const savedCart = loadUserCart(existingUser.id);
+          if (savedCart.length > 0) {
+            setCart(savedCart);
+          }
+          setViewedProductIds(loadUserViewedIds(existingUser.id));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleLoginSuccess = (loggedInUser: UserProfile) => {
+    setUser(loggedInUser);
+    const existingUserCart = loadUserCart(loggedInUser.id);
+    if (existingUserCart.length > 0) {
+      setCart(existingUserCart);
+    } else if (cart.length > 0) {
+      // Migrate current guest cart items to newly signed in account
+      setCart(cart);
+    }
+    setViewedProductIds(loadUserViewedIds(loggedInUser.id));
+    triggerDecisionFetch();
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    setUser(null);
+    setCart(loadUserCart());
+    setViewedProductIds(loadUserViewedIds());
+    triggerDecisionFetch();
+  };
 
   const handleViewProduct = useCallback(
     async (productId: string) => {
@@ -136,11 +208,6 @@ export default function App() {
 
       setViewedProductIds((prev) => {
         const next = [productId, ...prev.filter((id) => id !== productId)].slice(0, 10);
-        try {
-          localStorage.setItem('faircart_viewed_ids', JSON.stringify(next));
-        } catch (e) {
-          console.error('Failed to save viewed IDs', e);
-        }
         return next;
       });
       triggerDecisionFetch();
@@ -211,14 +278,25 @@ export default function App() {
     }
   }, [dismissedIds]);
 
-  // Save cart to localStorage
+  // Save user-scoped cart to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('faircart_cart', JSON.stringify(cart));
+      const key = `faircart_cart_${user?.id || 'guest'}`;
+      localStorage.setItem(key, JSON.stringify(cart));
     } catch (e) {
       console.error('Failed to save cart to localStorage', e);
     }
-  }, [cart]);
+  }, [cart, user?.id]);
+
+  // Save user-scoped viewedProductIds to localStorage
+  useEffect(() => {
+    try {
+      const key = `faircart_viewed_ids_${user?.id || 'guest'}`;
+      localStorage.setItem(key, JSON.stringify(viewedProductIds));
+    } catch (e) {
+      console.error('Failed to save viewed IDs to localStorage', e);
+    }
+  }, [viewedProductIds, user?.id]);
 
   // Save shoppingContext to localStorage
   useEffect(() => {
@@ -269,11 +347,11 @@ export default function App() {
     setDismissedIds(new Set());
     setViewedProductIds([]);
     try {
-      localStorage.removeItem('faircart_cart');
+      const cartKey = `faircart_cart_${user?.id || 'guest'}`;
+      const viewedKey = `faircart_viewed_ids_${user?.id || 'guest'}`;
+      localStorage.removeItem(cartKey);
+      localStorage.removeItem(viewedKey);
       localStorage.removeItem('faircart_dismissed_ids');
-      localStorage.removeItem('faircart_viewed_ids');
-      localStorage.removeItem('faircart_saved_cart');
-      localStorage.removeItem('faircart_historical_orders');
     } catch (e) {
       console.error('Failed to clear storage:', e);
     }
@@ -283,11 +361,13 @@ export default function App() {
       console.error('Failed to clear session events:', e);
     }
     triggerDecisionFetch();
-  }, [sessionId, triggerDecisionFetch]);
+  }, [sessionId, user?.id, triggerDecisionFetch]);
 
-  // Query Decision Engine whenever cart contents, shoppingContext, viewedProductIds, or revision change
+  // Query Decision Engine whenever cart contents, shoppingContext, viewedProductIds, user, or revision change
+  // Guards against race conditions by discarding stale asynchronous responses
   useEffect(() => {
     let isMounted = true;
+    const currentRequestId = ++decisionRequestIdRef.current;
 
     const appliedDiscounts: Record<string, number> = {};
     cart.forEach((i) => {
@@ -298,6 +378,7 @@ export default function App() {
 
     fetchDecision({
       session_id: sessionId,
+      user_id: user?.id,
       cart_items: cart.map((i) => ({
         product_id: i.product.id,
         quantity: i.quantity,
@@ -310,13 +391,13 @@ export default function App() {
       discount_cap: 0.20,
     })
       .then((data) => {
-        if (isMounted) {
+        if (isMounted && currentRequestId === decisionRequestIdRef.current) {
           setDecision(data);
         }
       })
       .catch((err) => {
         console.error('Decision pipeline error:', err);
-        if (isMounted) {
+        if (isMounted && currentRequestId === decisionRequestIdRef.current) {
           setDecision(null);
         }
       });
@@ -324,7 +405,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [cart, shoppingContext, viewedProductIds, sessionId, decisionRevision]);
+  }, [cart, shoppingContext, viewedProductIds, sessionId, user?.id, decisionRevision]);
 
   // Revalidate cart bundle discounts against latest backend decision
   // Automatically revokes discounts if prerequisite items are removed
@@ -465,16 +546,36 @@ export default function App() {
     clearSessionEvents(sessionId).catch(() => {});
   };
 
-  const handleCompleteOrder = () => {
+  const handleCompleteOrder = async () => {
     recordSessionEvent({
       session_id: sessionId,
       event_type: 'simulated_purchase_completed',
       shopping_context: shoppingContext,
       metadata: { total_items: cart.length },
     }).catch(() => {});
+
+    // If authenticated, persist the completed simulated order to the database
+    if (user && cart.length > 0) {
+      try {
+        const appliedDiscounts: Record<string, number> = {};
+        cart.forEach((i) => {
+          if (i.appliedDiscountPct && i.appliedDiscountPct > 0) {
+            appliedDiscounts[i.product.id] = i.appliedDiscountPct;
+          }
+        });
+        await createSimulatedOrder({
+          items: cart.map((i) => ({ product_id: i.product.id, quantity: i.quantity })),
+          applied_discounts: appliedDiscounts,
+        });
+      } catch (e) {
+        console.error('Failed to persist simulated order:', e);
+      }
+    }
+
     setCart([]);
     setDismissedIds(new Set());
     clearSessionEvents(sessionId).catch(() => {});
+    triggerDecisionFetch();
   };
 
   // Handle accepting a complementary recommendation
@@ -546,6 +647,10 @@ export default function App() {
           health={health}
           loadingHealth={loadingHealth}
           onOpenTransparency={() => setIsTransparencyOpen(true)}
+          user={user}
+          onOpenLogin={() => setIsLoginOpen(true)}
+          onOpenOrderHistory={() => setIsOrderHistoryOpen(true)}
+          onLogout={handleLogout}
         />
 
         {/* Main Application Content */}
@@ -615,6 +720,22 @@ export default function App() {
         onClose={() => setIsTransparencyOpen(false)}
         geminiConfigured={health?.gemini_configured ?? false}
       />
+
+      {/* Demo Account Authentication Modal */}
+      <LoginModal
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
+
+      {/* User Order History Modal */}
+      {user && (
+        <OrderHistoryModal
+          isOpen={isOrderHistoryOpen}
+          onClose={() => setIsOrderHistoryOpen(false)}
+          user={user}
+        />
+      )}
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-6 mt-12 text-center text-xs text-slate-500">

@@ -1,8 +1,9 @@
 import time
+import re
 from collections import defaultdict
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import FastAPI, HTTPException, Header, Request, Depends, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -15,19 +16,36 @@ from backend.app.engine.explanation import GeminiExplanationService
 from backend.app.engine.associations import get_association_engine
 from backend.app.models.schemas import (
     BasketQuote,
+    CreateOrderRequest,
     DecisionRequest,
     DecisionResponse,
     ExplanationRequest,
     ExplanationResponse,
     HealthResponse,
+    LoginRequest,
+    LoginResponse,
     MerchantSettingsRequest,
+    OrderDetail,
+    OrderItemDetail,
     Product,
     QuoteRequest,
     SessionEventCreate,
     SimulationRequest,
     SimulationResponse,
+    UserProfile,
 )
 from backend.app.engine.simulator import EconomicSimulator
+from backend.app.auth import (
+    attach_session_cookie,
+    check_login_rate_limit,
+    clear_login_failures,
+    clear_session_cookie,
+    create_user_session,
+    get_current_user_optional,
+    get_current_user_required,
+    record_failed_login,
+    verify_password,
+)
 
 # In-memory sliding window rate limiter for CPU-intensive endpoints (zero external dependencies)
 SIMULATION_RATE_LIMITS: dict[str, list[float]] = defaultdict(list)
@@ -65,7 +83,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize database schema and ensure deterministic catalog seeding on startup
+# Initialize database schema and ensure deterministic catalog & demo accounts seeding on startup
 @app.on_event("startup")
 def on_startup():
     init_db()
@@ -74,8 +92,11 @@ def on_startup():
         if repo.count_products() < 32:
             from backend.scripts.seed_catalog import seed_catalog
             seed_catalog()
+        if repo.count_users() < 5:
+            from backend.scripts.seed_demo_accounts import seed_demo_accounts
+            seed_demo_accounts()
     except Exception as e:
-        print(f"Startup catalog verification note: {e}")
+        print(f"Startup catalog/demo account verification note: {e}")
 
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["System Health"])
 def get_health() -> HealthResponse:
@@ -102,15 +123,295 @@ def get_catalog() -> list[Product]:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve catalog from database: {str(e)}")
 
 @app.post("/api/v1/decision", response_model=DecisionResponse, tags=["Decision Engine"])
-def create_decision(request: DecisionRequest) -> DecisionResponse:
+def create_decision(
+    request: DecisionRequest,
+    current_user: dict | None = Depends(get_current_user_optional),
+) -> DecisionResponse:
     """Evaluates the active cart context to produce ranked complementary recommendations (3-5 items)
     and margin-preserving incentive optimization. Synchronous and deterministic (< 25ms).
     """
     try:
+        if current_user and not request.user_id:
+            request.user_id = current_user["user_id"]
         orchestrator = DecisionOrchestrator()
         return orchestrator.process_decision(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Decision pipeline failed: {str(e)}")
+
+# ------------------------------------------------------------------------------
+# DEMONSTRATION AUTHENTICATION & SESSIONS (Milestone 6B)
+# ------------------------------------------------------------------------------
+
+@app.get("/api/v1/auth/demo-personas", tags=["Authentication"])
+def get_demo_personas():
+    """Returns the 5 evaluation demo personas with role tags, metadata, and helper credentials
+    parsed from .local/demo-credentials.local.md if available locally.
+    """
+    creds_path = BASE_DIR / ".local" / "demo-credentials.local.md"
+    if not creds_path.exists():
+        creds_path = Path(".local/demo-credentials.local.md")
+    
+    password_map = {}
+    if creds_path.exists():
+        try:
+            text = creds_path.read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if line.strip().startswith("|") and "`" in line:
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) >= 5:
+                        u_match = re.search(r"`([^`]+)`", parts[2])
+                        p_match = re.search(r"`([^`]+)`", parts[3])
+                        if u_match and p_match:
+                            password_map[u_match.group(1)] = p_match.group(1)
+        except Exception:
+            pass
+
+    repo = CatalogRepository()
+    users = repo.get_all_users()
+    tag_map = {
+        "demo_gamer": "Gamer",
+        "demo_student": "Student",
+        "demo_creator": "Creator",
+        "demo_traveler": "Traveler",
+        "demo_office": "Office Pro",
+    }
+    personas = []
+    for u in users:
+        personas.append({
+            "id": u.id,
+            "username": u.username,
+            "display_name": u.display_name,
+            "tag": tag_map.get(u.username, "Customer"),
+            "persona_description": u.persona_description,
+            "demo_password": password_map.get(u.username, ""),
+        })
+    return personas
+
+@app.post("/api/v1/auth/login", response_model=LoginResponse, tags=["Authentication"])
+def login(login_req: LoginRequest, request: Request, response: Response) -> LoginResponse:
+    """Authenticates one of the 5 demo accounts, enforces failed login rate limits, and issues a session."""
+    client_ip = request.client.host if request.client else "unknown"
+    check_login_rate_limit(client_ip)
+    check_login_rate_limit(login_req.username)
+
+    repo = CatalogRepository()
+    user = repo.get_user_by_username(login_req.username)
+
+    if not user or not verify_password(user.password_hash, login_req.password):
+        record_failed_login(client_ip)
+        record_failed_login(login_req.username)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password. Please verify demonstration credentials.",
+        )
+
+    clear_login_failures(client_ip)
+    clear_login_failures(login_req.username)
+
+    session_token, _ = create_user_session(user.id, days=7)
+    attach_session_cookie(response, session_token)
+
+    return LoginResponse(
+        user=UserProfile(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            persona_description=user.persona_description,
+            created_at=user.created_at,
+        ),
+        session_token=session_token,
+    )
+
+@app.get("/api/v1/auth/me", response_model=UserProfile, tags=["Authentication"])
+def get_me(current_user: dict = Depends(get_current_user_required)) -> UserProfile:
+    """Retrieves profile information for the actively authenticated demo account."""
+    return UserProfile(
+        id=current_user["user_id"],
+        username=current_user["username"],
+        display_name=current_user["display_name"],
+        persona_description=current_user["persona_description"],
+        created_at=current_user["created_at"],
+    )
+
+@app.post("/api/v1/auth/logout", tags=["Authentication"])
+def logout(request: Request, response: Response):
+    """Terminates the active session and clears the session cookie."""
+    from backend.app.auth import extract_session_token
+    token = extract_session_token(request)
+    if token:
+        repo = CatalogRepository()
+        repo.delete_session(token)
+    clear_session_cookie(response)
+    return {"status": "logged_out", "message": "Session invalidated successfully"}
+
+# ------------------------------------------------------------------------------
+# ACCOUNT-SPECIFIC ORDER HISTORIES & SIMULATED CHECKOUT (Milestone 6B)
+# ------------------------------------------------------------------------------
+
+@app.get("/api/v1/orders", response_model=list[OrderDetail], tags=["Orders"])
+def get_orders(current_user: dict = Depends(get_current_user_required)) -> list[OrderDetail]:
+    """Retrieves past simulated orders belonging strictly to the authenticated demo account."""
+    repo = CatalogRepository()
+    orders = repo.get_orders_for_user(current_user["user_id"])
+    return [
+        OrderDetail(
+            id=o.id,
+            user_id=o.user_id,
+            created_at=o.created_at,
+            status=o.status,
+            provenance=o.provenance,
+            currency=o.currency,
+            total_amount=o.total_amount,
+            total_savings=o.total_savings,
+            items=[
+                OrderItemDetail(
+                    product_id=i["product_id"],
+                    name=i["name"],
+                    category=i.get("category", ""),
+                    image_url=i.get("image_url", ""),
+                    quantity=i["quantity"],
+                    reference_price=i["reference_price"],
+                    simulated_price=i["simulated_price"],
+                    savings=i["savings"],
+                    line_total=i["line_total"],
+                )
+                for i in o.items
+            ],
+        )
+        for o in orders
+    ]
+
+@app.get("/api/v1/orders/{order_id}", response_model=OrderDetail, tags=["Orders"])
+def get_order_by_id(order_id: str, current_user: dict = Depends(get_current_user_required)) -> OrderDetail:
+    """Retrieves an itemized order, enforcing ownership by the authenticated account."""
+    repo = CatalogRepository()
+    order = repo.get_order_by_id(order_id, current_user["user_id"])
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return OrderDetail(
+        id=order.id,
+        user_id=order.user_id,
+        created_at=order.created_at,
+        status=order.status,
+        provenance=order.provenance,
+        currency=order.currency,
+        total_amount=order.total_amount,
+        total_savings=order.total_savings,
+        items=[
+            OrderItemDetail(
+                product_id=i["product_id"],
+                name=i["name"],
+                category=i.get("category", ""),
+                image_url=i.get("image_url", ""),
+                quantity=i["quantity"],
+                reference_price=i["reference_price"],
+                simulated_price=i["simulated_price"],
+                savings=i["savings"],
+                line_total=i["line_total"],
+            )
+            for i in order.items
+        ],
+    )
+
+@app.post("/api/v1/orders", response_model=OrderDetail, tags=["Orders"])
+def create_simulated_order(
+    req: CreateOrderRequest,
+    current_user: dict = Depends(get_current_user_required),
+) -> OrderDetail:
+    """Records a new simulated completed checkout under the authenticated demo account."""
+    if not req.items:
+        raise HTTPException(status_code=400, detail="Cannot create an order with an empty basket.")
+
+    import uuid
+    from datetime import datetime, timezone
+    import json
+
+    repo = CatalogRepository()
+    product_ids = [item.get("product_id") for item in req.items if item.get("product_id")]
+    entities = {e.id: e for e in repo.get_entities_by_ids(product_ids)}
+
+    total_standard_cents = 0
+    total_final_cents = 0
+    order_items = []
+
+    for item in req.items:
+        pid = item.get("product_id")
+        qty = int(item.get("quantity", 1))
+        prod = entities.get(pid)
+        if not prod or qty <= 0:
+            continue
+
+        ref_cents = prod.reference_price_cents
+        disc_pct = req.applied_discounts.get(pid, 0.0)
+        custom_price = item.get("discounted_price") or item.get("custom_price")
+        if custom_price is not None:
+            unit_cents = int(round(custom_price * 100))
+        else:
+            unit_cents = int(round(ref_cents * (1.0 - disc_pct)))
+
+        unit_cents = min(unit_cents, ref_cents)
+        line_total = unit_cents * qty
+        savings_cents = max(0, (ref_cents - unit_cents) * qty)
+
+        total_standard_cents += ref_cents * qty
+        total_final_cents += line_total
+
+        order_items.append({
+            "product_id": prod.id,
+            "name": prod.name,
+            "category": prod.category,
+            "image_url": prod.image_url,
+            "quantity": qty,
+            "reference_price": round(ref_cents / 100.0, 2),
+            "simulated_price": round(unit_cents / 100.0, 2),
+            "savings": round(savings_cents / 100.0, 2),
+            "line_total": round(line_total / 100.0, 2),
+        })
+
+    if not order_items:
+        raise HTTPException(status_code=400, detail="No valid catalog products in order.")
+
+    total_savings_cents = total_standard_cents - total_final_cents
+    order_id = f"ord_sim_{uuid.uuid4().hex[:10]}"
+    now = datetime.now(timezone.utc).isoformat()
+
+    order_entity = repo.create_order(
+        order_id=order_id,
+        user_id=current_user["user_id"],
+        created_at=now,
+        status="completed_simulated",
+        provenance="simulated_checkout",
+        currency="USD",
+        total_cents=total_final_cents,
+        savings_cents=total_savings_cents,
+        items_json=json.dumps(order_items),
+    )
+
+    return OrderDetail(
+        id=order_entity.id,
+        user_id=order_entity.user_id,
+        created_at=order_entity.created_at,
+        status=order_entity.status,
+        provenance=order_entity.provenance,
+        currency=order_entity.currency,
+        total_amount=order_entity.total_amount,
+        total_savings=order_entity.total_savings,
+        items=[
+            OrderItemDetail(
+                product_id=i["product_id"],
+                name=i["name"],
+                category=i.get("category", ""),
+                image_url=i.get("image_url", ""),
+                quantity=i["quantity"],
+                reference_price=i["reference_price"],
+                simulated_price=i["simulated_price"],
+                savings=i["savings"],
+                line_total=i["line_total"],
+            )
+            for i in order_entity.items
+        ],
+    )
+
 
 @app.post("/api/v1/quote", response_model=BasketQuote, tags=["Decision Engine"])
 def calculate_quote(request: QuoteRequest) -> BasketQuote:

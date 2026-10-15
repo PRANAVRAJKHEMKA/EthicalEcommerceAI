@@ -130,8 +130,9 @@ Because free cloud container tiers spin down after 15 minutes of inactivity:
 
 | Persistence Layer | Technology | Storage Life | Data Stored | Resets On |
 | :--- | :--- | :--- | :--- | :--- |
-| **Shopper State** | Browser `localStorage` | Survives refresh & browser reopen | Cart items, intent filter, dismissed recommendations, anonymous view history | Explicit "Reset Session" button or browser cache clear |
+| **Shopper State** | Browser `localStorage` | Survives refresh & browser reopen | Cart items, intent filter, dismissed recommendations, user-scoped anonymous & authenticated view history | Explicit "Reset Session" button or browser cache clear |
 | **Merchant Admin Key** | Browser `sessionStorage` | Session lifetime | `faircart_admin_token` | Tab close |
+| **Demo Accounts & Orders** | SQLite (`faircart.db`) | Permanent in repo/auto-seeded | 5 user personas (`users`), Argon2id password hashes, 15 synthetic past orders (`orders`), and simulated checkouts | Never (auto-seeded on startup if empty) |
 | **Catalog & Rules** | SQLite (`faircart.db`) | Permanent in repo/auto-seeded | 32 products, 980 association rules, HistGBM model artifact | Never (re-seeded automatically on boot if missing) |
 | **Merchant Settings (Option A)** | SQLite (`faircart.db`) | Ephemeral across cold restarts | `margin_floor` (15%), `discount_cap` (20%) | Cold container spin-down (resets to default 15%/20%) |
 | **Merchant Settings (Option B/C)** | Neon PostgreSQL or Persistent Disk | Fully durable | `margin_floor`, `discount_cap`, simulation run history | Never (persisted across restarts and deploys) |
@@ -142,9 +143,13 @@ Because free cloud container tiers spin down after 15 minutes of inactivity:
 
 | Validation Check | Tool / Mechanism | Result | Evidence Timestamp |
 | :--- | :--- | :--- | :--- |
-| Backend Automated Tests | Python `unittest` | **101 / 101 tests passing** (0 failures, 0 errors in 30.8s) | 2026-10-15 |
-| Frontend Production Build | Vite 6.4.4 + TypeScript 5.7 | **Built cleanly in 4.26s** (0 type errors, gzip: 94.6 kB JS, 6.3 kB CSS) | 2026-10-15 |
+| Backend Automated Tests | Python `unittest` | **118 / 118 tests passing** (0 failures, 0 errors in 80.8s) | 2026-10-15 |
+| Frontend Production Build | Vite 6.4.4 + TypeScript 5.7 | **Built cleanly in 8.98s** (0 type errors, gzip: 99.3 kB JS, 6.6 kB CSS) | 2026-10-15 |
+| Demo Authentication Security | `test_demo_auth.py` | 5 demo personas, Argon2id verification, 401 on bad password, 429 on 5 failed attempts, 403 on admin escalation | 2026-10-15 |
+| Account Order Isolation | `test_account_order_history.py` | 15 synthetic orders, cross-account 404, simulated checkout persistence under authenticated account | 2026-10-15 |
+| Personalized Order Anchors | `test_personalized_recommendations.py` | Gamer vs Creator recommendations diverge on empty basket ($O_{gamer} \neq O_{creator}$), zero leakage to guest | 2026-10-15 |
+| Pointer Dwell Reliability | `test_hover_reliability.py` & CDP | 700ms dwell contract, touch filtering, internal child boundary protection, stale response sequence guard | 2026-10-15 |
 | Content Negotiation | `TestClient(app)` | `Accept: application/json` -> 200 API JSON; `Accept: text/html` -> 200 SPA HTML | 2026-10-15 |
 | Simulation Rate Limiter | `TestClient(app)` | 15 requests allowed; 16th returns `HTTP 429` | 2026-10-15 |
 | Merchant Admin Guardrail | `TestClient(app)` | Unauthenticated `POST /settings` -> `HTTP 403`; with `X-Admin-Token` -> `HTTP 200` | 2026-10-15 |
-| Repository Secret Hygiene | `git ls-files` check | Zero `.env` files, `.db` files, or `learner-profile.md` tracked in Git | 2026-10-15 |
+| Repository Secret Hygiene | `git ls-files` check | Zero `.env` files, `.db` files, `.local` credential files, or `learner-profile.md` tracked in Git | 2026-10-15 |

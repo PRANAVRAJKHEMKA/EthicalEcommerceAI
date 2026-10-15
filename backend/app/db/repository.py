@@ -1,5 +1,7 @@
+import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from backend.app.db.database import get_connection
 from backend.app.models.schemas import Product
 
@@ -42,6 +44,44 @@ class ProductEntity:
             use_cases=list(self.use_cases),
             image_url=self.image_url,
         )
+
+@dataclass(frozen=True)
+class UserEntity:
+    """Internal user domain entity for authenticated demo accounts."""
+    id: str
+    username: str
+    display_name: str
+    persona_description: str
+    password_hash: str
+    created_at: str
+
+@dataclass(frozen=True)
+class OrderEntity:
+    """Internal order domain entity representing past simulated purchases."""
+    id: str
+    user_id: str
+    created_at: str
+    status: str
+    provenance: str
+    currency: str
+    total_cents: int
+    savings_cents: int
+    items_json: str
+
+    @property
+    def total_amount(self) -> float:
+        return round(self.total_cents / 100.0, 2)
+
+    @property
+    def total_savings(self) -> float:
+        return round(self.savings_cents / 100.0, 2)
+
+    @property
+    def items(self) -> list[dict]:
+        try:
+            return json.loads(self.items_json)
+        except Exception:
+            return []
 
 class CatalogRepository:
     """Repository handling all database queries for the product catalog and merchant settings."""
@@ -340,5 +380,322 @@ class CatalogRepository:
             }
         finally:
             conn.close()
+
+    # --------------------------------------------------------------------------
+    # USER ACCOUNTS & SESSIONS (Milestone 6B)
+    # --------------------------------------------------------------------------
+
+    def create_user(
+        self,
+        user_id: str,
+        username: str,
+        display_name: str,
+        persona_description: str,
+        password_hash: str,
+        created_at: str | None = None,
+    ) -> UserEntity:
+        """Creates a demonstration user with hashed credentials."""
+        now = created_at or datetime.now(timezone.utc).isoformat()
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO users (id, username, display_name, persona_description, password_hash, created_at)
+                VALUES (?, ?, ?, ?, ?, ?);
+            """, (user_id, username, display_name, persona_description, password_hash, now))
+            conn.commit()
+            return UserEntity(
+                id=user_id,
+                username=username,
+                display_name=display_name,
+                persona_description=persona_description,
+                password_hash=password_hash,
+                created_at=now,
+            )
+        finally:
+            conn.close()
+
+    def get_user_by_username(self, username: str) -> UserEntity | None:
+        """Retrieves a user by exact username."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE username = ?;", (username,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return UserEntity(
+                id=row["id"],
+                username=row["username"],
+                display_name=row["display_name"],
+                persona_description=row["persona_description"],
+                password_hash=row["password_hash"],
+                created_at=row["created_at"],
+            )
+        finally:
+            conn.close()
+
+    def get_user_by_id(self, user_id: str) -> UserEntity | None:
+        """Retrieves a user by unique identifier."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?;", (user_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return UserEntity(
+                id=row["id"],
+                username=row["username"],
+                display_name=row["display_name"],
+                persona_description=row["persona_description"],
+                password_hash=row["password_hash"],
+                created_at=row["created_at"],
+            )
+        finally:
+            conn.close()
+
+    def get_all_users(self) -> list[UserEntity]:
+        """Retrieves all registered demonstration users."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users ORDER BY username ASC;")
+            rows = cursor.fetchall()
+            return [
+                UserEntity(
+                    id=r["id"],
+                    username=r["username"],
+                    display_name=r["display_name"],
+                    persona_description=r["persona_description"],
+                    password_hash=r["password_hash"],
+                    created_at=r["created_at"],
+                )
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def count_users(self) -> int:
+        """Returns the total number of users."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM users;")
+            row = cursor.fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
+    def update_user_password(self, username: str, new_password_hash: str) -> bool:
+        """Updates the password hash for a demonstration user."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?;", (new_password_hash, username))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def create_session(self, session_token: str, user_id: str, expires_at: str) -> None:
+        """Stores a server-validated session token."""
+        now = datetime.now(timezone.utc).isoformat()
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO user_sessions (session_token, user_id, created_at, expires_at)
+                VALUES (?, ?, ?, ?);
+            """, (session_token, user_id, now, expires_at))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_session(self, session_token: str) -> dict | None:
+        """Retrieves an active session if not expired."""
+        now = datetime.now(timezone.utc).isoformat()
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT s.session_token, s.user_id, s.created_at, s.expires_at,
+                       u.username, u.display_name, u.persona_description
+                FROM user_sessions s
+                JOIN users u ON s.user_id = u.id
+                WHERE s.session_token = ? AND s.expires_at > ?;
+            """, (session_token, now))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "session_token": row["session_token"],
+                "user_id": row["user_id"],
+                "created_at": row["created_at"],
+                "expires_at": row["expires_at"],
+                "username": row["username"],
+                "display_name": row["display_name"],
+                "persona_description": row["persona_description"],
+            }
+        finally:
+            conn.close()
+
+    def delete_session(self, session_token: str) -> bool:
+        """Revokes a session token."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM user_sessions WHERE session_token = ?;", (session_token,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_user_sessions(self, user_id: str) -> int:
+        """Revokes all active sessions for a user."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM user_sessions WHERE user_id = ?;", (user_id,))
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            conn.close()
+
+    # --------------------------------------------------------------------------
+    # ACCOUNT-SPECIFIC ORDER HISTORIES (Milestone 6B)
+    # --------------------------------------------------------------------------
+
+    def create_order(
+        self,
+        order_id: str,
+        user_id: str,
+        created_at: str,
+        status: str,
+        provenance: str,
+        currency: str,
+        total_cents: int,
+        savings_cents: int,
+        items_json: str,
+    ) -> OrderEntity:
+        """Persists a new order record under a specific user account."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO orders (
+                    id, user_id, created_at, status, provenance, currency, total_cents, savings_cents, items_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (order_id, user_id, created_at, status, provenance, currency, total_cents, savings_cents, items_json))
+            conn.commit()
+            return OrderEntity(
+                id=order_id,
+                user_id=user_id,
+                created_at=created_at,
+                status=status,
+                provenance=provenance,
+                currency=currency,
+                total_cents=total_cents,
+                savings_cents=savings_cents,
+                items_json=items_json,
+            )
+        finally:
+            conn.close()
+
+    def get_orders_for_user(self, user_id: str) -> list[OrderEntity]:
+        """Retrieves all past orders belonging strictly to the specified user account."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM orders
+                WHERE user_id = ?
+                ORDER BY created_at DESC;
+            """, (user_id,))
+            rows = cursor.fetchall()
+            return [
+                OrderEntity(
+                    id=r["id"],
+                    user_id=r["user_id"],
+                    created_at=r["created_at"],
+                    status=r["status"],
+                    provenance=r["provenance"],
+                    currency=r["currency"],
+                    total_cents=r["total_cents"],
+                    savings_cents=r["savings_cents"],
+                    items_json=r["items_json"],
+                )
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def get_order_by_id(self, order_id: str, user_id: str) -> OrderEntity | None:
+        """Retrieves a specific order, enforcing that it belongs to the authenticated user."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM orders WHERE id = ? AND user_id = ?;", (order_id, user_id))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return OrderEntity(
+                id=row["id"],
+                user_id=row["user_id"],
+                created_at=row["created_at"],
+                status=row["status"],
+                provenance=row["provenance"],
+                currency=row["currency"],
+                total_cents=row["total_cents"],
+                savings_cents=row["savings_cents"],
+                items_json=row["items_json"],
+            )
+        finally:
+            conn.close()
+
+    def count_orders_for_user(self, user_id: str) -> int:
+        """Counts orders associated with a specific user."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?;", (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
+    def count_all_orders(self) -> int:
+        """Counts total orders across all users."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM orders;")
+            row = cursor.fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
+    def get_user_purchased_product_ids(self, user_id: str) -> list[str]:
+        """Extracts unique product IDs purchased across all completed orders for a user.
+        Accepts either user ID or username for seamless resolution.
+        """
+        effective_user_id = user_id
+        user = self.get_user_by_id(user_id)
+        if not user:
+            user = self.get_user_by_username(user_id)
+        if user:
+            effective_user_id = user.id
+
+        orders = self.get_orders_for_user(effective_user_id)
+        purchased_pids: list[str] = []
+        seen = set()
+        for o in orders:
+            for item in o.items:
+                pid = item.get("product_id")
+                if pid and pid not in seen:
+                    seen.add(pid)
+                    purchased_pids.append(pid)
+        return purchased_pids
+
 
 

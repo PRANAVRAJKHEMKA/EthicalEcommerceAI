@@ -41,6 +41,7 @@ class DecisionRequest(BaseModel):
     viewed_product_ids: list[str] = Field(default_factory=list, description="Recently viewed product IDs in current session")
     saved_cart_product_ids: list[str] = Field(default_factory=list, description="Product IDs in an explicitly saved cart")
     historical_order_product_ids: list[str] = Field(default_factory=list, description="Product IDs from completed prior FairCart orders")
+    user_id: str | None = Field(default=None, description="Authenticated shopper user ID if signed in")
     search_query: str = Field(default="", description="Active or recent search query within the application")
 
 class IncentiveResponse(BaseModel):
@@ -221,4 +222,56 @@ class SimulationResponse(BaseModel):
     relative_comparison: dict
     dataset_provenance: dict
     run_metadata: dict
+
+# ------------------------------------------------------------------------------
+# AUTHENTICATION & DEMO ACCOUNTS (Milestone 6B)
+# ------------------------------------------------------------------------------
+
+class UserProfile(BaseModel):
+    """Public shopper profile schema for authenticated demo accounts."""
+    id: str
+    username: str
+    display_name: str
+    persona_description: str
+    created_at: str
+
+class LoginRequest(BaseModel):
+    """Login credentials submission."""
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    """Successful authentication response."""
+    user: UserProfile
+    session_token: str
+    message: str = "Authenticated successfully"
+
+class OrderItemDetail(BaseModel):
+    """Itemized product in an order."""
+    product_id: str
+    name: str
+    category: str
+    image_url: str
+    quantity: int
+    reference_price: float
+    simulated_price: float
+    savings: float
+    line_total: float
+
+class OrderDetail(BaseModel):
+    """Itemized past order with provenance metadata."""
+    id: str
+    user_id: str
+    created_at: str
+    status: str = "completed_simulated"
+    provenance: str = "synthetic_demonstration"
+    currency: str = "USD"
+    total_amount: float
+    total_savings: float
+    items: list[OrderItemDetail]
+
+class CreateOrderRequest(BaseModel):
+    """Payload for completing a simulated checkout while signed in."""
+    items: list[dict]
+    applied_discounts: dict[str, float] = Field(default_factory=dict)
 

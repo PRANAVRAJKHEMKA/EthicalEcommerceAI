@@ -12,6 +12,12 @@ import {
   SessionEvent,
   SimulationRequest,
   SimulationResponse,
+  UserProfile,
+  LoginRequest,
+  LoginResponse,
+  OrderDetail,
+  CreateOrderRequest,
+  DemoPersona,
 } from './types.ts';
 
 // Configurable API base url supporting environment override or relative URL for unified deployment
@@ -22,6 +28,32 @@ const API_BASE =
   window.location.hostname !== '127.0.0.1'
     ? ''
     : 'http://127.0.0.1:8000');
+
+export function getStoredSessionToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('faircart_session_token');
+}
+
+export function setStoredSessionToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (token) {
+    localStorage.setItem('faircart_session_token', token);
+  } else {
+    localStorage.removeItem('faircart_session_token');
+  }
+}
+
+function getAuthHeaders(): Record<string, string> {
+  const token = getStoredSessionToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Session-Token'] = token;
+  }
+  return headers;
+}
 
 export async function fetchHealth(): Promise<HealthStatus> {
   const res = await fetch(`${API_BASE}/api/v1/health`);
@@ -42,9 +74,8 @@ export async function fetchCatalog(): Promise<Product[]> {
 export async function fetchDecision(req: DecisionRequest): Promise<DecisionResponse> {
   const res = await fetch(`${API_BASE}/api/v1/decision`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
+    credentials: 'include',
     body: JSON.stringify(req),
   });
   if (!res.ok) {
@@ -183,6 +214,114 @@ export async function fetchLatestSimulation(): Promise<SimulationResponse | null
   } catch {
     return null;
   }
+}
+
+// -------------------------------------------------------------
+// Authentication & Order History (Milestone 6B)
+// -------------------------------------------------------------
+
+export async function fetchDemoPersonas(): Promise<DemoPersona[]> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/demo-personas`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch demo personas (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function loginUser(credentials: LoginRequest): Promise<LoginResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Login failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {
+      // fallback
+    }
+    throw new Error(msg);
+  }
+  const data: LoginResponse = await res.json();
+  setStoredSessionToken(data.session_token);
+  return data;
+}
+
+export async function fetchCurrentUser(): Promise<UserProfile | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+      headers: getAuthHeaders(),
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        setStoredSessionToken(null);
+      }
+      return null;
+    }
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function logoutUser(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/v1/auth/logout`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      credentials: 'include',
+    });
+  } catch {
+    // ignore network errors on logout
+  } finally {
+    setStoredSessionToken(null);
+  }
+}
+
+export async function fetchUserOrders(): Promise<OrderDetail[]> {
+  const res = await fetch(`${API_BASE}/api/v1/orders`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch orders (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchOrderById(orderId: string): Promise<OrderDetail> {
+  const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch order (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createSimulatedOrder(req: CreateOrderRequest): Promise<OrderDetail> {
+  const res = await fetch(`${API_BASE}/api/v1/orders`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(req),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Order submission failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {
+      // fallback
+    }
+    throw new Error(msg);
+  }
+  return res.json();
 }
 
 

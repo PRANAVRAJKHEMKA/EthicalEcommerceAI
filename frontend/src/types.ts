@@ -36,6 +36,7 @@ export interface CartItemInput {
 
 export interface DecisionRequest {
   session_id?: string;
+  user_id?: string;
   cart_items: CartItemInput[];
   applied_discounts?: Record<string, number>;
   shopping_context?: string;
@@ -46,6 +47,62 @@ export interface DecisionRequest {
   saved_cart_product_ids?: string[];
   historical_order_product_ids?: string[];
   search_query?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  display_name: string;
+  persona_description: string;
+  created_at: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  user: UserProfile;
+  session_token: string;
+}
+
+export interface OrderItemDetail {
+  product_id: string;
+  name: string;
+  category: string;
+  image_url: string;
+  quantity: number;
+  reference_price: number;
+  simulated_price: number;
+  savings: number;
+  line_total: number;
+}
+
+export interface OrderDetail {
+  id: string;
+  user_id: string;
+  created_at: string;
+  status: string;
+  provenance: string;
+  currency: string;
+  total_amount: number;
+  total_savings: number;
+  items: OrderItemDetail[];
+}
+
+export interface CreateOrderRequest {
+  items: { product_id: string; quantity: number }[];
+  applied_discounts?: Record<string, number>;
+}
+
+export interface DemoPersona {
+  id: string;
+  username: string;
+  display_name: string;
+  tag: string;
+  persona_description: string;
+  demo_password?: string;
 }
 
 export interface RecommendationItem {

@@ -107,12 +107,22 @@ Build mode: learn
   Verify (mechanical): Run full 101 backend unit tests (100% pass), build frontend production bundle (`tsc -b && vite build` in 4.26s), test rate limiter (15 ok, 1 429), test admin auth (403 unauth, 200 auth), audit git secret hygiene (0 secrets in git).
   Commit: `feat(ship): Milestone 6 public deployment architecture, containerization, and security guardrails`
 
+- [x] **8. Demo Authentication, Account-Specific Order History, Personalized Anchors & Reliable Hover Tracking (Milestone 6B)**
+  Becomes usable: 5 distinct customer demonstration accounts (`demo_gamer`, `demo_student`, `demo_creator`, `demo_traveler`, `demo_office`) with Argon2id password hashing and brute-force rate limiting; 15 itemized synthetic past orders across personas; account-specific past orders act as authenticated historical order anchors ($A = B \cup V \cup S \cup O$) tailored to persona habits with zero cross-account leakage; simulated checkout persistence under active user account; user-scoped localStorage and cart isolation; reliable pointer dwell tracking (700ms threshold, touch rejection, internal child boundary protection, unmount/visibility cancellation); stale asynchronous decision response discard guard; Login modal with quick-select demo chips and show/hide password toggle; Order History modal with item details, savings, and anchor explanation; 118/118 backend unit tests passing; clean frontend build; 4 live Edge CDP screenshots verified.
+  Why now: Provides evaluators with an authentic multi-account experience and itemized order history without manual data entry, while correcting hover tracking reliability and cross-account isolation.
+  PRD ref: `prd.md > 1. System Topology`, `prd.md > Account & History`
+  Spec ref: `spec.md > 5.8 /auth, /orders`, `devpost/deployment-and-persistence.md`
+  Build: Add `users`, `user_sessions`, and `orders` tables in SQLite; implement `auth.py` (Argon2id, session tokens, sliding-window rate limit); implement `seed_demo_accounts.py`; mount `/api/v1/auth/login`, `/me`, `/logout`, `/demo-personas`, `/orders`; update `orchestrator.py` to anchor on user purchased product IDs; update `ProductCard.tsx` with 700ms dwell, pointer events, and child transition safety; build `LoginModal.tsx` and `OrderHistoryModal.tsx`; update `Header.tsx` and `App.tsx` with cart isolation and stale response guard; write 4 test suites (17 new tests); capture 4 CDP screenshots.
+  Verify (mechanical): Run 118/118 backend unit tests (100% pass), build frontend bundle (`tsc -b && vite build` in 8.98s), execute browser CDP journey (`verify_m6b_browser.cjs`), verify secret hygiene (`.local/demo-credentials.local.md` gitignored).
+  Commit: `feat(auth): Milestone 6B demo authentication, account order history, and reliable hover tracking`
+
 ## Hands-on Checkpoints
 - [x] Checkpoint 1 (After Slice 1): Verify backend health check and database seeding.
 - [x] Checkpoint 2 (After Slice 3): Try shopping in the storefront and verify that margin floors prevent invalid discounts.
 - [x] Checkpoint 3 (After Slice 5): Run the 3-policy simulation and review comparative metrics.
 - [x] Checkpoint 4 (After Slice 5B): Verify intentional hover dwell thresholds and deliberate modal views in live browser.
-- [x] Final Review (After Slice 6/7): Walk through the complete 2-minute demo script before packaging for Devpost.
+- [x] Checkpoint 5 (After Slice 8 / M6B): Verify multi-account login, order history anchors, persona differentiation, and reliable 700ms pointer dwell tracking in live browser CDP.
+- [x] Final Review (After Slice 6/7/8): Walk through the complete 2-minute demo script before packaging for Devpost.
 
 ## Code Tour and App Map
 - [x] Completed architectural review, system data flow diagram, and self-contained HTML app map in `devpost/app-map.html`.

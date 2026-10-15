@@ -731,10 +731,79 @@
      - Created `.env.example` documenting all configuration keys.
      - `.gitignore` and `.dockerignore` audited and verified: `.env*`, `*.db`, `*.sqlite3`, and `devpost/learner-profile.md` (personal learner context) are strictly excluded from Git. Zero secrets exist in Git history.
 
-- **How to Explain to Judges:**
-  "When putting an AI application on the public web, security cannot be an afterthought. We protected compute-heavy Monte Carlo simulations with an in-memory IP rate limiter to prevent server exhaustion. For merchant settings, we built an administrative authorization guardrail where keys are held strictly in session memory—never exposed in client code or Git history. FairCart AI is secure by default."
+### DEC-026: Multi-Account Demonstration Authentication & Argon2id Security (Milestone 6B)
 
-- **Status:** **Implemented, Tested & Verified (in Milestone 6)**.
+- **What We Decided & Implemented:**
+  1. **5 Believable Customer Personas:**
+     - Provisioned five distinct personas representing diverse shopping styles:
+       1. `demo_gamer` (Alex Mercer): Competitive gamer seeking low-latency peripherals and mechanical gear.
+       2. `demo_student` (Maya Lin): University student optimizing a compact study nook for focus and eye comfort.
+       3. `demo_creator` (Devon Reed): Audio/video streamer prioritizing 4K capture and studio acoustics.
+       4. `demo_traveler` (Jordan Hayes): Digital nomad valuing compact GaN power banks and travel cases.
+       5. `demo_office` (Sarah Jenkins): Corporate knowledge worker prioritizing posture health and dual-monitor ergonomics.
+  2. **Argon2id Password Derivation & Salt Security:**
+     - Pinned `argon2-cffi==25.1.0`. All passwords hashed with state-of-the-art Argon2id ($m=65536, t=3, p=4$).
+     - High-entropy, cryptographically random 20-character credentials generated per persona.
+  3. **Strict Credential Boundary:**
+     - Zero plaintext passwords committed to Git, tracked files, or judge notes.
+     - Generated credentials stored strictly in local, gitignored file (`.local/demo-credentials.local.md`).
+     - Evaluation helper endpoint (`GET /api/v1/auth/demo-personas`) dynamically reads local credentials only when present locally, enabling quick-select chip pre-filling in the frontend without leaking secrets.
+  4. **Brute-Force Rate Limiting:**
+     - In-memory sliding-window tracker enforcing max 5 failed attempts per 60 seconds per IP/username, immediately responding with `HTTP 429 Too Many Requests`.
+  5. **Session Management & Administrative Isolation:**
+     - Session tokens (256-bit cryptographically secure strings) stored in SQLite `user_sessions` with 7-day validity.
+     - Extracted via Bearer header, `X-Session-Token`, or HttpOnly cookie.
+     - Customer account logins have **zero** merchant administrative privileges: customer tokens passed to `POST /api/v1/settings` return `HTTP 403 Forbidden`.
+
+- **How to Explain to Judges:**
+  "To let judges evaluate FairCart AI across different shopping styles without creating accounts from scratch, we built 5 realistic demo accounts backed by industry-standard Argon2id hashing. The frontend features one-click persona chips that pre-fill credentials for evaluation convenience, but execute the real cryptographic authentication flow and issue genuine session tokens. Customer accounts have zero administrative access to merchant settings, and brute-force attempts are locked out after 5 failures."
+
+- **Status:** **Implemented, Tested & Verified (in Milestone 6B)**.
+
+---
+
+### DEC-027: Account-Specific Order Histories & Recommendation Anchor Integration (Milestone 6B)
+
+- **What We Decided & Implemented:**
+  1. **Itemized Past Synthetic Orders:**
+     - Provisioned 15 itemized historical orders (3 per persona) spanning legitimate catalog products with dates, status (`completed_simulated`), provenance (`synthetic_demonstration`), line savings, and paid totals.
+  2. **Personalized Anchor Set Expansion ($A = B \cup V \cup S \cup O$):**
+     - Sourced authenticated user past order items into candidate anchor pool $O$ via `repository.get_user_purchased_product_ids(user_id)` with weight $0.75$.
+     - Empty-basket recommendations for `demo_gamer` vs `demo_creator` surface distinct, defensible recommendations without requiring cart contents.
+  3. **Strict Cross-Account Isolation:**
+     - User A cannot access User B's order by ID (`GET /api/v1/orders/{order_id}` returns `HTTP 404`).
+     - Guest requests have zero user order anchors ($O = \emptyset$).
+  4. **Simulated Checkout Persistence:**
+     - Completing simulated checkout while signed in calls `POST /api/v1/orders`, saving the order to SQLite under the active user's ID and incrementing their order count.
+  5. **User-Scoped Cart & Storage Isolation:**
+     - Cart and viewed products are partitioned in localStorage by user ID (`faircart_cart_${userId}`, `faircart_viewed_ids_${userId}`), ensuring zero cross-persona leakage when switching accounts.
+
+- **How to Explain to Judges:**
+  "When you log in as Alex Mercer (Gamer), FairCart AI incorporates your past purchases into its candidate pool, highlighting gaming accessories and desk gear. Switch to Devon Reed (Creator), and the recommendations instantly pivot toward studio microphones and 4K webcams. Past orders are strictly isolated in SQLite: no customer can peek into another user's purchases, and completing a checkout immediately appends the new order to your personal history."
+
+- **Status:** **Implemented, Tested & Verified (in Milestone 6B)**.
+
+---
+
+### DEC-028: Reliable Pointer Dwell Tracking & Stale Asynchronous Response Guards (Milestone 6B)
+
+- **What We Decided & Implemented:**
+  1. **High-Precision 700ms Pointer Dwell Threshold:**
+     - Reduced dwell threshold from 900ms to 700ms based on human-computer interaction ergonomics for deliberate hover inspection.
+     - Switched from synthetic mouse events to native `onPointerEnter` and `onPointerLeave`.
+  2. **Touch Device Noise Filtering:**
+     - Explicitly checks `e.pointerType !== 'touch'`, filtering out mobile taps that synthesize incidental hover events.
+  3. **Internal Child Boundary Transition Protection:**
+     - Guarded hover departure using `e.currentTarget.contains(e.relatedTarget)`. Moving the cursor between text, buttons, or badges inside a card does **not** cancel or restart the dwell timer.
+  4. **Unmount & Visibility Cancellation:**
+     - Added React unmount cleanup and a `visibilitychange` window listener to cancel timers if the user switches tabs or navigates away.
+  5. **Stale Asynchronous Decision Response Guard:**
+     - Implemented an incremental sequence ID ref (`decisionRequestIdRef`) in `App.tsx`. Earlier slow asynchronous decision responses that resolve out of order are discarded if a newer response has already arrived.
+
+- **How to Explain to Judges:**
+  "Tracking hovers in web apps is notoriously brittle: accidental swipes generate noise, moving over a button inside a card can cancel the timer, and mobile taps trigger fake mouse events. We re-engineered hover tracking with pointer events, an ergonomic 700ms dwell threshold, touch filtering, and boundary containment checks. We also added an incremental request sequence guard so slow network responses can never overwrite newer recommendations."
+
+- **Status:** **Implemented, Tested & Verified (in Milestone 6B)**.
 
 ---
 
@@ -773,11 +842,15 @@
 | **Merchant Admin Key Guardrail**     | ADR §5.2 | **Implemented (`main.py`, `MerchantView.tsx`)** | **Passed (HTTP 403 without token; 200 with X-Admin-Token; sessionStorage safe)** |
 | **Content-Negotiated Root & SPA Mount** | ADR §4.3 | **Implemented (`main.py` Accept header)** | **Passed (JSON for API clients, HTML SPA for web browsers)** |
 | **Self-Healing Startup Catalog Seeding**| ADR §4.1 | **Implemented (`main.py:startup_event`)** | **Passed (32 items & 980 rules seeded automatically on empty boot)** |
+| **Demonstration Authentication (Argon2id)** | Spec §5.8 | **Implemented (`auth.py`)** | **Passed (7 unittests, Argon2id, sliding-window rate limit, bearer/cookie)** |
+| **Account Order History & Isolation** | Spec §5.8 | **Implemented (`repository.py`)** | **Passed (4 unittests, 15 synthetic orders, cross-account 404, simulated checkout persistence)** |
+| **Personalized Order Anchors ($A = B \cup V \cup S \cup O$)** | Spec §3.7 | **Implemented (`orchestrator.py`)** | **Passed (3 unittests, distinct gamer vs creator picks, zero leakage)** |
+| **Reliable 700ms Pointer Dwell & Stale Guards** | Spec §3.4 | **Implemented (`ProductCard.tsx`, `App.tsx`)** | **Passed (3 unittests, Edge CDP verified, touch rejection, child transition safe)** |
 
 ---
 
 ## 5. Testing & Verification Evidence
-*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, Milestone 3 Decision Engine, Milestone 4 Product Refinement, Milestone 4B Hybrid ML & RecSys Pipeline, Milestone 4C Cold-Start Intelligence, Milestone 5 Economic Simulation Comparator, Milestone 5B Frequency-Aware Signals, and Milestone 6 Public Deployment Architecture executed and verified.*
+*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, Milestone 3 Decision Engine, Milestone 4 Product Refinement, Milestone 4B Hybrid ML & RecSys Pipeline, Milestone 4C Cold-Start Intelligence, Milestone 5 Economic Simulation Comparator, Milestone 5B Frequency-Aware Signals, Milestone 6 Public Deployment Architecture, and Milestone 6B Demo Authentication & Order History executed and verified.*
 
 - [x] **Database Initialization & Seeding:** `test_database_has_twenty_products` and 32-item catalog seed passed (verified 32 validated items loaded into `faircart.db`).
 - [x] **Product Financial Positivity & COGS Invariant:** `test_product_schema_and_financial_positivity` passed (verified 0 < COGS < RefPrice and positive inventory for all products).
@@ -788,7 +861,7 @@
 - [x] **Interactive Cart Drawer & Quantity State:** Implemented in `CartDrawer.tsx` with dynamic item addition, increment/decrement controls, live subtotal computation, and empty-state messaging.
 - [x] **Responsive Storefront & Filters:** Implemented in `StorefrontView.tsx` with dynamic category pills, real-time client-side search, skeleton loading state, and error recovery retry action.
 - [x] **Simulated Zero-Payment Checkout:** Implemented in `CheckoutModal.tsx` providing an itemized order receipt, transparent zero-payment disclosure, and cart reset.
-- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed cleanly in 10.71s with zero TypeScript compilation errors (`tsc -b && vite build`), compiling 1,600 modules.
+- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed cleanly in 8.98s with zero TypeScript compilation errors (`tsc -b && vite build`), compiling 1,602 modules.
 - [x] **Tailwind PostCSS Pipeline Hookup:** Fixed root cause by creating `frontend/src/index.css` with `@tailwind` directives and importing it in `main.tsx`. Verified that the Vite build now outputs full stylesheets.
 - [x] **Headless Edge Desktop Visual Verification:** Captured and visually inspected `screenshot_desktop.png` (1280x900 viewport) via CDP. Verified 4-column aligned product grid, fixed-aspect image containers, clean typography hierarchy, and FastAPI status badge.
 - [x] **Headless Edge Mobile Visual Verification:** Captured and visually inspected `screenshot_mobile.png` (390x844 viewport, mobile touch emulation) via CDP. Verified responsive header, horizontal category scrollbar hidden, hero section wraps cleanly, and product cards fit 100% of the mobile viewport.
@@ -804,13 +877,17 @@
 - [x] **Offline Recommendation Benchmark (Milestone 4B):** Evaluated across 400 held-out synthetic test sessions ($K=4$): HitRate@4 (`0.0625` baseline $\to$ `0.3075` hybrid, +392%), Recall@4 (`0.0625` $\to$ `0.3075`), NDCG@4 (`0.0351` $\to$ `0.2669`, +660%), catalog coverage (`90.62%` $\to$ `100.0%`), and average pairwise attribute similarity (`0.2148` $\to$ `0.1196`, confirming significantly more diverse sets).
 - [x] **Three-Policy Simulation Comparator (Milestone 5):** `test_simulation_engine.py` passed 13 automated checks verifying 1,000 paired Common Random Numbers sessions, 9 distinct shopper archetypes, exact profit accounting, 0 margin floor breaches under FairCart AI vs 46 under Blanket 15%, and responsive embedded SVG visualization.
 - [x] **Frequency-Aware Interaction Signals & Deliberate View (Milestone 5B):** `test_frequency_aware_signals.py` passed 12 automated checks verifying 5 views > 1 view ($0.8832$ vs $0.6457$), time decay, hover < view ($0.5475$ vs $0.6457$), bounded 50 hovers ($0.9723 < 1.0$), brief hover (<700ms) = 0.00, idempotency deduplication (`INSERT OR IGNORE`), and modal inspection.
-- [x] **Consolidated Backend Test Suite:** All 101 unit tests in `backend/tests/` passed cleanly in 30.8s (100% pass rate, 0 failures, 0 errors).
-- [x] **Real-Browser Edge CDP Automated Journey (Milestone 5B):** `verify_m5b_browser.cjs` executed full live browser test: verified 0 brief hover events (<700ms), 1 qualifying hover (>=900ms), 2 distinct episodes, deliberate detail modal open/close with `product_view` emission, localStorage/SQLite persistence surviving reload, and cart drawer authoritative quote verification. Captured `screenshot_m5b_quick_view_modal.png` and `screenshot_m5b_frequency_recommendations.png`.
-- [x] **Production Multi-Stage Container Build (Milestone 6):** Created `Dockerfile` (Node 20 alpine builder + Python 3.12 slim runtime) and `.dockerignore`. Validated clean frontend bundle build (`tsc -b && vite build` in 4.26s) outputting 94.6 kB gzip JS bundle.
+- [x] **Production Multi-Stage Container Build (Milestone 6):** Created `Dockerfile` (Node 20 alpine builder + Python 3.12 slim runtime) and `.dockerignore`. Validated clean frontend bundle build outputting 99.3 kB gzip JS bundle.
 - [x] **Content-Negotiated Root & SPA Static Mount (Milestone 6):** Verified via `TestClient(app)`: `Accept: application/json` returns API discovery status (`HTTP 200`), while `Accept: text/html` returns compiled `index.html` (`HTTP 200`). Client-side routes (e.g. `/merchant`) fallback cleanly to `index.html`.
 - [x] **Compute Endpoint IP Rate Limiting (Milestone 6):** Validated in-memory sliding-window limiter on `POST /api/v1/simulate`: exactly 15 requests permitted within 60 seconds; 16th request rejected with `HTTP 429 Too Many Requests`.
 - [x] **Administrative Guardrail & Session Token (Milestone 6):** Validated on `POST /api/v1/settings`: requests without valid `X-Admin-Token` or Bearer header return `HTTP 403 Forbidden`; requests with valid token return `HTTP 200 OK`. Verified that React frontend persists token exclusively in browser `sessionStorage`.
-- [x] **Repository Secret Hygiene Audit (Milestone 6):** Audited `git ls-files` and git log: zero `.env` files, `.db` files, or `learner-profile.md` (private learner context) tracked in Git history. Created `.env.example` documenting all configuration parameters.
+- [x] **Repository Secret Hygiene Audit (Milestone 6):** Audited `git ls-files` and git log: zero `.env` files, `.db` files, `.local` credential files, or `learner-profile.md` (private learner context) tracked in Git history.
+- [x] **Demonstration Authentication & Session Security (Milestone 6B):** `test_demo_auth.py` passed 7 automated checks verifying 5 personas authenticate via Argon2id, invalid password rejection (401), session invalidation on logout, failed login rate limiting (5 failures -> 429), and zero customer privilege escalation on `/api/v1/settings` (403).
+- [x] **Account Order History & Cross-Account Isolation (Milestone 6B):** `test_account_order_history.py` passed 4 automated checks verifying 3 itemized synthetic orders per persona, schema validity (status, provenance, items, savings), strict isolation (User A cannot access User B's order -> 404), and authenticated simulated checkout order persistence.
+- [x] **Personalized Recommendations via Historical Order Anchors (Milestone 6B):** `test_personalized_recommendations.py` passed 3 automated checks verifying empty-basket recommendations for `demo_gamer` vs `demo_creator` surface distinct, defensible recommendations from their respective order history ($O_{gamer} \neq O_{creator}$), while guest requests have zero leaked order anchors.
+- [x] **Pointer Dwell Reliability & Stale Response Discard (Milestone 6B):** `test_hover_reliability.py` passed 3 automated checks verifying dwell metadata capture, duplicate event deduplication, and 700ms contract. `App.tsx` incremental request sequence ref prevents out-of-order stale decision responses from overwriting newer recommendations.
+- [x] **Consolidated Backend Test Suite:** All 118 unit tests in `backend/tests/` passed cleanly in 80.8s (100% pass rate, 0 failures, 0 errors).
+- [x] **Real-Browser Edge CDP Automated Journey (Milestone 6B):** `verify_m6b_browser.cjs` executed full live browser test: verified 0 brief hover events (<700ms), 1 qualifying hover (>=700ms), quick-select pre-filling and show/hide password toggle, Alex Mercer signed-in header badge, Order History modal with 3 orders (8 items), account switch to Devon Reed with dynamic persona update, simulated checkout appending 4th order in history, and clean logout. Captured 4 screenshots: `screenshot_m6b_signed_in_gamer.png`, `screenshot_m6b_gamer_order_history.png`, `screenshot_m6b_signed_in_creator.png`, and `screenshot_m6b_new_checkout_in_order_history.png`.
 
 ---
 

@@ -186,7 +186,11 @@ class DecisionOrchestrator:
                 seen_anchor_ids.add(sid)
 
         # Anchor Source 3: Historical completed FairCart order items (weight 0.75)
-        order_ids = list(request.historical_order_product_ids) if request.historical_order_product_ids else session_order_ids
+        user_order_pids: list[str] = []
+        if getattr(request, "user_id", None):
+            user_order_pids = self.repository.get_user_purchased_product_ids(request.user_id)
+
+        order_ids = list(request.historical_order_product_ids) if request.historical_order_product_ids else (user_order_pids or session_order_ids)
         for oid in order_ids:
             if oid not in seen_anchor_ids:
                 anchors.append(

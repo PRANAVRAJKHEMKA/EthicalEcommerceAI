@@ -130,6 +130,48 @@ def init_db(db_path: str | None = None) -> None:
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sim_runs_timestamp ON simulation_runs(timestamp);")
+
+        # Demonstration Users (Milestone 6B)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                display_name TEXT NOT NULL,
+                persona_description TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+
+        # Server-Validated User Sessions (Milestone 6B)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                session_token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON user_sessions(expires_at);")
+
+        # Account Orders: persistent itemized synthetic orders & simulated checkouts (Milestone 6B)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'completed_simulated',
+                provenance TEXT NOT NULL DEFAULT 'synthetic_demonstration',
+                currency TEXT NOT NULL DEFAULT 'USD',
+                total_cents INTEGER NOT NULL,
+                savings_cents INTEGER NOT NULL DEFAULT 0,
+                items_json TEXT NOT NULL
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);")
         conn.commit()
     finally:
         conn.close()
