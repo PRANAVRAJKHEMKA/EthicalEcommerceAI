@@ -648,6 +648,51 @@
 
 ---
 
+### DEC-023: Frequency-Aware Interaction Signals & Deliberate Product Detail Interaction (Milestone 5B)
+
+- **What We Decided & Implemented:**
+  1. **Exact Frequency-Aware, Time-Decayed Interaction Scoring:**
+     - Replaced unweighted binary product visit flags with an exponential time-decayed interest accumulator:
+       $$z_p = \sum_{e \in H_p} w_{\operatorname{type}(e)} \exp\left(-\frac{\Delta t_e}{\tau}\right)$$
+       with half-life parameter $\tau = 24.0$ hours and documented action weights:
+       - `simulated_purchase_completed` / `order_completed`: $1.00$
+       - `add_to_cart`: $0.80$
+       - `cart_saved`: $0.65$
+       - `product_view`: $0.35$
+       - Qualifying hover ($\ge 900$ms): $0.10$
+       - Brief hover ($< 700$ms): $0.00$
+       - Impression / catalogue display: $0.00$
+     - Bounded monotonically increasing transformation:
+       $$E(p, h) = 0.5 + 0.5 \tanh(\ln(1 + \max(0.0, z_p))) \in [0.5, 1.0)$$
+       - Neutral baseline ($z_p = 0$): $E = 0.50$
+       - 1 view ($z_p = 0.35$): $E \approx 0.6457$
+       - 5 views ($z_p = 1.75$): $E \approx 0.8832$
+       - 1 qualifying hover ($z_p = 0.10$): $E \approx 0.5475$
+       - 5 qualifying hovers ($z_p = 0.50$): $E \approx 0.6923$
+       - 50 hovers ($z_p = 5.00$): $E \approx 0.9723 < 1.0$ (diminishing returns guarantee strictly bounded evidence)
+  2. **Product Card Pointer Dwell Threshold & Episode Isolation:**
+     - Fixed previous bug where any mouse swipe triggered a full `product_view`.
+     - Pointer dwell threshold ($\ge 900$ms) enforced via React `useRef` timer. Pointer departure prior to 900ms immediately cancels the event without emissions.
+     - Episode identifiers (`hov-{pid}-{ts}-{rand}`) restrict emissions to at most 1 hover event per continuous dwell episode, while allowing new episodes on intentional return.
+     - Full keyboard accessibility: 900ms `onFocus` tracking emitting `product_focus`.
+  3. **Deliberate Product Detail Inspection Modal (`ProductDetailModal.tsx`):**
+     - Clicking a product card or Quick View button opens an accessible modal dialog (`role="dialog"`), presenting rich product specifications, category badges, reference price/bundle offer status, inventory, and Add to Cart action.
+     - Emits authentic `product_view` event upon intentional inspection.
+  4. **Event Idempotency & SQLite Persistence:**
+     - Enforced `INSERT OR IGNORE` with unique client/server `event_id` primary key in SQLite.
+     - Browser refresh verified: viewed interaction history survives page reload in localStorage and SQLite.
+  5. **100% Automated & Real-Browser Verification:**
+     - 101/101 backend unit tests pass in 28.5s (12 dedicated frequency-aware signal tests in `test_frequency_aware_signals.py`).
+     - Real-browser Edge CDP automated journey (`verify_m5b_browser.cjs`) verified 0 events for 350ms brief hover, 1 event for 1100ms qualifying hover, 2 events for separate episodes, modal inspection, and quote consistency.
+     - Live visual artifacts: `screenshot_m5b_quick_view_modal.png` and `screenshot_m5b_frequency_recommendations.png`.
+
+- **How to Explain to Judges:**
+  "In real shopping, seeing someone inspect a keyboard five times or open its detail modal indicates much stronger interest than someone accidentally glancing at it once. FairCart AI models interaction frequency with exponential time decay: five views carry strictly more weight than one, and a 900ms intentional hover contributes a small, bounded signal. But crucially, our mathematical tanh bound ensures repeat visits can never be gamed to hijack the recommendation engine or override merchant margin safety."
+
+- **Status:** **Implemented, Tested & Verified (in Milestone 5B)**.
+
+---
+
 ## 4. Feature Traceability & Implementation Status
 
 | Feature | Scope / PRD Ref | Implementation State | Verification State |
@@ -676,12 +721,13 @@
 | **"How Offers Work" Disclosure Modal** | PRD §1.5 | **Implemented (`TransparencyModal.tsx`)** | **Passed (Full dual-engine transparency)** |
 | **Anonymous Session Interaction Events** | Spec §5.7 | **Implemented (`POST/GET/DELETE /api/v1/events`)** | **Passed (Zero-PII session lifecycle logging)** |
 | **3-Policy Synthetic Simulation Engine**| PRD §4.F | **Implemented (`simulator.py`)** | **Passed (1,000 paired CRN sessions, 13 unittests, Edge CDP verified)** |
-| **Automated Test Suite (Full Backend)** | PRD §7 | **Implemented (`backend/tests/`)** | **Passed (89/89 backend unit tests passing in ~81s)** |
+| **Frequency-Aware Interaction Signals**| Spec §3.4, §5.7 | **Implemented (`recommender.py`, `ProductDetailModal.tsx`)** | **Passed (12 dedicated unittests, 900ms hover dwell, Edge CDP verified)** |
+| **Automated Test Suite (Full Backend)** | PRD §7 | **Implemented (`backend/tests/`)** | **Passed (101/101 backend unit tests passing in ~28.5s)** |
 
 ---
 
 ## 5. Testing & Verification Evidence
-*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, Milestone 3 Decision Engine, Milestone 4 Product Refinement, Milestone 4B Hybrid ML & RecSys Pipeline, Milestone 4C Cold-Start Intelligence, and Milestone 5 Economic Simulation Comparator executed and verified.*
+*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, Milestone 3 Decision Engine, Milestone 4 Product Refinement, Milestone 4B Hybrid ML & RecSys Pipeline, Milestone 4C Cold-Start Intelligence, Milestone 5 Economic Simulation Comparator, and Milestone 5B Frequency-Aware Signals executed and verified.*
 
 - [x] **Database Initialization & Seeding:** `test_database_has_twenty_products` and 32-item catalog seed passed (verified 32 validated items loaded into `faircart.db`).
 - [x] **Product Financial Positivity & COGS Invariant:** `test_product_schema_and_financial_positivity` passed (verified 0 < COGS < RefPrice and positive inventory for all products).
@@ -692,7 +738,7 @@
 - [x] **Interactive Cart Drawer & Quantity State:** Implemented in `CartDrawer.tsx` with dynamic item addition, increment/decrement controls, live subtotal computation, and empty-state messaging.
 - [x] **Responsive Storefront & Filters:** Implemented in `StorefrontView.tsx` with dynamic category pills, real-time client-side search, skeleton loading state, and error recovery retry action.
 - [x] **Simulated Zero-Payment Checkout:** Implemented in `CheckoutModal.tsx` providing an itemized order receipt, transparent zero-payment disclosure, and cart reset.
-- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed in 2.48s with zero TypeScript compilation errors, compiling 1,599 modules and outputting a dedicated 28.7 kB CSS bundle.
+- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed cleanly in 10.71s with zero TypeScript compilation errors (`tsc -b && vite build`), compiling 1,600 modules.
 - [x] **Tailwind PostCSS Pipeline Hookup:** Fixed root cause by creating `frontend/src/index.css` with `@tailwind` directives and importing it in `main.tsx`. Verified that the Vite build now outputs full stylesheets.
 - [x] **Headless Edge Desktop Visual Verification:** Captured and visually inspected `screenshot_desktop.png` (1280x900 viewport) via CDP. Verified 4-column aligned product grid, fixed-aspect image containers, clean typography hierarchy, and FastAPI status badge.
 - [x] **Headless Edge Mobile Visual Verification:** Captured and visually inspected `screenshot_mobile.png` (390x844 viewport, mobile touch emulation) via CDP. Verified responsive header, horizontal category scrollbar hidden, hero section wraps cleanly, and product cards fit 100% of the mobile viewport.
@@ -705,9 +751,11 @@
 - [x] **Product Experience Refinement & Persistence (Milestone 4):** Expanded catalogue to 32 verified products in SQLite with curated imagery. Added Shopping Intent selector with factual compatibility explanations. Implemented `TransparencyModal.tsx` and interactive `MerchantView.tsx` with active sliders (`margin_floor`, `discount_cap`) persisted to SQLite. Implemented automatic bundle discount revocation upon parent item removal in cart.
 - [x] **Apriori Basket Association Mining Math (Milestone 4B):** `test_associations_math.py` verified hand-calculated support, raw confidence, Laplace-smoothed confidence ($\alpha=1.0$), bounded logarithmic lift, multi-item antecedent subsets ($|X| \le 3$), zero-denominator safeguards, and session-grouped 80/20 train/test splitting with zero cross-session leakage.
 - [x] **Hybrid ML Recommender & MMR Diversity (Milestone 4B):** `test_hybrid_ml_recommender.py` passed 15 automated checks verifying $S_{hybrid}$ exact component weighting, non-cart exclusivity, interaction event exponential decay ($\tau=24.0$h), multi-attribute MMR diversity re-ranking, candidate feature vector extraction (14 features), HistGradientBoostingClassifier training/persistence, sub-millisecond fallback, and sub-25ms synchronous latency.
-- [x] **Offline Recommendation Benchmark (Milestone 4B):** Evaluated across 400 held-out synthetic test sessions ($K=4$): HitRate@4 (`0.0625` baseline $\to$ `0.3650` hybrid, +484%), Recall@4 (`0.0625` $\to$ `0.3650`), NDCG@4 (`0.0351` $\to$ `0.3018`, +759%), catalog coverage (`90.62%` $\to$ `100.0%`), and average pairwise attribute similarity (`0.2148` $\to$ `0.1235`, confirming significantly more diverse sets).
-- [x] **Consolidated Backend Test Suite:** All 61 unit tests in `backend/tests/` passed cleanly in ~20.4s.
-- [ ] 3-Policy Simulation Comparator: (Scheduled for Milestone 5).
+- [x] **Offline Recommendation Benchmark (Milestone 4B):** Evaluated across 400 held-out synthetic test sessions ($K=4$): HitRate@4 (`0.0625` baseline $\to$ `0.3075` hybrid, +392%), Recall@4 (`0.0625` $\to$ `0.3075`), NDCG@4 (`0.0351` $\to$ `0.2669`, +660%), catalog coverage (`90.62%` $\to$ `100.0%`), and average pairwise attribute similarity (`0.2148` $\to$ `0.1196`, confirming significantly more diverse sets).
+- [x] **Three-Policy Simulation Comparator (Milestone 5):** `test_simulation_engine.py` passed 13 automated checks verifying 1,000 paired Common Random Numbers sessions, 9 distinct shopper archetypes, exact profit accounting, 0 margin floor breaches under FairCart AI vs 46 under Blanket 15%, and responsive embedded SVG visualization.
+- [x] **Frequency-Aware Interaction Signals & Deliberate View (Milestone 5B):** `test_frequency_aware_signals.py` passed 12 automated checks verifying 5 views > 1 view ($0.8832$ vs $0.6457$), time decay, hover < view ($0.5475$ vs $0.6457$), bounded 50 hovers ($0.9723 < 1.0$), brief hover (<700ms) = 0.00, idempotency deduplication (`INSERT OR IGNORE`), and modal inspection.
+- [x] **Consolidated Backend Test Suite:** All 101 unit tests in `backend/tests/` passed cleanly in ~28.5s (100% pass rate).
+- [x] **Real-Browser Edge CDP Automated Journey (Milestone 5B):** `verify_m5b_browser.cjs` executed full live browser test: verified 0 brief hover events (<700ms), 1 qualifying hover (>=900ms), 2 distinct episodes, deliberate detail modal open/close with `product_view` emission, localStorage/SQLite persistence surviving reload, and cart drawer authoritative quote verification. Captured `screenshot_m5b_quick_view_modal.png` and `screenshot_m5b_frequency_recommendations.png`.
 
 ---
 

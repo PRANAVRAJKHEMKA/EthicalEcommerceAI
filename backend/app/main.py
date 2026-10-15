@@ -169,23 +169,29 @@ def get_latest_simulation():
 ALLOWED_EVENT_TYPES = {
     "product_view",
     "product_viewed",
+    "product_hover",
+    "product_focus",
     "search_submitted",
     "add_to_cart",
     "cart_item_added",
     "remove_from_cart",
     "cart_item_removed",
     "cart_saved",
+    "save_cart",
     "recommendation_shown",
     "recommendation_accepted",
     "offer_shown",
     "context_selected",
     "simulated_purchase_completed",
+    "order_completed",
 }
 
 EVENT_TYPE_NORMALIZATION = {
     "product_viewed": "product_view",
     "cart_item_added": "add_to_cart",
     "cart_item_removed": "remove_from_cart",
+    "save_cart": "cart_saved",
+    "order_completed": "simulated_purchase_completed",
 }
 
 @app.post("/api/v1/events", tags=["Session Events"])
@@ -205,6 +211,8 @@ def record_event(evt: SessionEventCreate):
             product_id=evt.product_id,
             shopping_context=evt.shopping_context,
             metadata=evt.metadata,
+            event_id=evt.event_id,
+            timestamp=evt.timestamp,
         )
         return {"status": "recorded", "event_id": event_id}
     except Exception as e:

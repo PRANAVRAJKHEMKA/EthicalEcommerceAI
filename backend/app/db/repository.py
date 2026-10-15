@@ -171,29 +171,31 @@ class CatalogRepository:
         product_id: str = "",
         shopping_context: str = "all",
         metadata: dict | None = None,
+        event_id: str | None = None,
+        timestamp: str | None = None,
     ) -> str:
-        """Records an anonymous session event with zero PII."""
+        """Records an anonymous session event with zero PII and idempotency."""
         import json
         import uuid
         from datetime import datetime, timezone
 
-        event_id = f"evt-{uuid.uuid4().hex[:12]}"
-        timestamp = datetime.now(timezone.utc).isoformat()
+        final_id = event_id.strip() if event_id and event_id.strip() else f"evt-{uuid.uuid4().hex[:12]}"
+        final_ts = timestamp.strip() if timestamp and timestamp.strip() else datetime.now(timezone.utc).isoformat()
         meta_str = json.dumps(metadata or {})
 
         conn = get_connection(self.db_path)
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO session_events (id, session_id, event_type, product_id, shopping_context, metadata_json, timestamp)
+                INSERT OR IGNORE INTO session_events (id, session_id, event_type, product_id, shopping_context, metadata_json, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?);
-            """, (event_id, session_id, event_type, product_id, shopping_context, meta_str, timestamp))
+            """, (final_id, session_id, event_type, product_id, shopping_context, meta_str, final_ts))
             conn.commit()
-            return event_id
+            return final_id
         finally:
             conn.close()
 
-    def get_session_events(self, session_id: str, limit: int = 50) -> list[dict]:
+    def get_session_events(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieves anonymous event history for a given session."""
         import json
         conn = get_connection(self.db_path)
@@ -223,16 +225,16 @@ class CatalogRepository:
             conn.close()
 
     def get_session_viewed_product_ids(self, session_id: str) -> list[str]:
-        """Returns distinct product IDs viewed or interacted with in the active session."""
+        """Returns distinct product IDs viewed, hovered, or interacted with in the active session."""
         conn = get_connection(self.db_path)
         try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT DISTINCT product_id
                 FROM session_events
-                WHERE session_id = ? AND product_id != '' AND event_type IN ('product_view', 'search_submitted')
+                WHERE session_id = ? AND product_id != '' AND event_type IN ('product_view', 'product_hover', 'product_focus', 'search_submitted')
                 ORDER BY timestamp DESC
-                LIMIT 20;
+                LIMIT 30;
             """, (session_id,))
             rows = cursor.fetchall()
             return [r["product_id"] for r in rows if r["product_id"]]

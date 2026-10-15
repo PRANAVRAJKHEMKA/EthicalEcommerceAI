@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Product,
   CartItem,
@@ -111,18 +111,93 @@ export default function App() {
     }
   });
 
-  const handleViewProduct = useCallback((productId: string) => {
-    setViewedProductIds((prev) => {
-      const filtered = prev.filter((id) => id !== productId);
-      const next = [productId, ...filtered].slice(0, 10);
-      try {
-        localStorage.setItem('faircart_viewed_ids', JSON.stringify(next));
-      } catch (e) {
-        console.error('Failed to save viewed IDs', e);
-      }
-      return next;
-    });
+  const [decisionRevision, setDecisionRevision] = useState(0);
+  const triggerDecisionFetch = useCallback(() => {
+    setDecisionRevision((r) => r + 1);
   }, []);
+
+  const hoverDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleViewProduct = useCallback(
+    async (productId: string) => {
+      const episodeId = `view-${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      try {
+        await recordSessionEvent({
+          session_id: sessionId,
+          event_type: 'product_view',
+          product_id: productId,
+          shopping_context: shoppingContext,
+          event_id: episodeId,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.error('Failed to record product_view event:', e);
+      }
+
+      setViewedProductIds((prev) => {
+        const next = [productId, ...prev.filter((id) => id !== productId)].slice(0, 10);
+        try {
+          localStorage.setItem('faircart_viewed_ids', JSON.stringify(next));
+        } catch (e) {
+          console.error('Failed to save viewed IDs', e);
+        }
+        return next;
+      });
+      triggerDecisionFetch();
+    },
+    [sessionId, shoppingContext, triggerDecisionFetch]
+  );
+
+  const handleProductHover = useCallback(
+    async (productId: string, durationMs: number, episodeId: string) => {
+      try {
+        await recordSessionEvent({
+          session_id: sessionId,
+          event_type: 'product_hover',
+          product_id: productId,
+          shopping_context: shoppingContext,
+          event_id: episodeId,
+          timestamp: new Date().toISOString(),
+          metadata: { dwell_ms: durationMs },
+        });
+      } catch (e) {
+        console.error('Failed to record product_hover event:', e);
+      }
+
+      if (hoverDebounceRef.current) {
+        clearTimeout(hoverDebounceRef.current);
+      }
+      hoverDebounceRef.current = setTimeout(() => {
+        triggerDecisionFetch();
+      }, 350);
+    },
+    [sessionId, shoppingContext, triggerDecisionFetch]
+  );
+
+  const handleProductFocus = useCallback(
+    async (productId: string, episodeId: string) => {
+      try {
+        await recordSessionEvent({
+          session_id: sessionId,
+          event_type: 'product_focus',
+          product_id: productId,
+          shopping_context: shoppingContext,
+          event_id: episodeId,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.error('Failed to record product_focus event:', e);
+      }
+
+      if (hoverDebounceRef.current) {
+        clearTimeout(hoverDebounceRef.current);
+      }
+      hoverDebounceRef.current = setTimeout(() => {
+        triggerDecisionFetch();
+      }, 350);
+    },
+    [sessionId, shoppingContext, triggerDecisionFetch]
+  );
 
   // Save dismissedIds to localStorage
   useEffect(() => {
@@ -189,7 +264,7 @@ export default function App() {
   }, [checkHealth, loadProducts]);
 
   // Reset session handler for demonstration and testing cold-start fallback
-  const handleResetSession = useCallback(() => {
+  const handleResetSession = useCallback(async () => {
     setCart([]);
     setDismissedIds(new Set());
     setViewedProductIds([]);
@@ -202,20 +277,15 @@ export default function App() {
     } catch (e) {
       console.error('Failed to clear storage:', e);
     }
-    fetchDecision({
-      session_id: sessionId,
-      cart_items: [],
-      shopping_context: shoppingContext,
-      viewed_product_ids: [],
-      dwell_time_seconds: 0,
-      margin_floor: 0.20,
-      discount_cap: 0.20,
-    })
-      .then((data) => setDecision(data))
-      .catch((err) => console.error('Error fetching reset decision:', err));
-  }, [sessionId, shoppingContext]);
+    try {
+      await clearSessionEvents(sessionId);
+    } catch (e) {
+      console.error('Failed to clear session events:', e);
+    }
+    triggerDecisionFetch();
+  }, [sessionId, triggerDecisionFetch]);
 
-  // Query Decision Engine whenever cart contents, shoppingContext, or viewedProductIds change
+  // Query Decision Engine whenever cart contents, shoppingContext, viewedProductIds, or revision change
   useEffect(() => {
     let isMounted = true;
 
@@ -254,7 +324,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [cart, shoppingContext, viewedProductIds, sessionId]);
+  }, [cart, shoppingContext, viewedProductIds, sessionId, decisionRevision]);
 
   // Revalidate cart bundle discounts against latest backend decision
   // Automatically revokes discounts if prerequisite items are removed
@@ -500,6 +570,8 @@ export default function App() {
               onOpenTransparency={() => setIsTransparencyOpen(true)}
               onViewProduct={handleViewProduct}
               onResetSession={handleResetSession}
+              onHoverProduct={handleProductHover}
+              onFocusProduct={handleProductFocus}
             />
           ) : (
             <MerchantView products={products} health={health} />

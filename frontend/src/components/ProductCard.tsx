@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Check, Package, Sparkles } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Plus, Check, Package, Sparkles, Eye } from 'lucide-react';
 import { Product, RecommendationItem } from '../types.ts';
 
 interface ProductCardProps {
@@ -13,6 +13,8 @@ interface ProductCardProps {
   cartQuantity: number;
   eligibleOffer?: RecommendationItem;
   onView?: (productId: string) => void;
+  onHover?: (productId: string, durationMs: number, episodeId: string) => void;
+  onFocus?: (productId: string, episodeId: string) => void;
 }
 
 export function ProductCard({
@@ -21,16 +23,79 @@ export function ProductCard({
   cartQuantity,
   eligibleOffer,
   onView,
+  onHover,
+  onFocus,
 }: ProductCardProps) {
   const [justAdded, setJustAdded] = useState(false);
+
+  // Hover episode tracking (900ms threshold)
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverEpisodeRef = useRef<{ id: string; fired: boolean } | null>(null);
+
+  // Keyboard focus tracking (900ms threshold)
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusEpisodeRef = useRef<{ id: string; fired: boolean } | null>(null);
 
   const hasOffer = eligibleOffer?.is_offered ?? false;
   const finalPrice = hasOffer ? eligibleOffer!.final_price : product.reference_price;
   const discountPct = hasOffer ? Math.round(eligibleOffer!.discount_percentage * 100) : 0;
   const savings = hasOffer ? eligibleOffer!.savings : 0;
 
-  const handleAdd = () => {
+  const handlePointerEnter = () => {
+    // Cancel any previous timer
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+    const episodeId = `hov-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    hoverEpisodeRef.current = { id: episodeId, fired: false };
+
+    // Emit event only after pointer remains over card for >= 900 ms
+    hoverTimerRef.current = setTimeout(() => {
+      if (hoverEpisodeRef.current && !hoverEpisodeRef.current.fired) {
+        hoverEpisodeRef.current.fired = true;
+        onHover?.(product.id, 900, hoverEpisodeRef.current.id);
+      }
+    }, 900);
+  };
+
+  const handlePointerLeave = () => {
+    // If pointer leaves before 900ms, cancel the pending hover event!
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    hoverEpisodeRef.current = null;
+  };
+
+  const handleFocus = () => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+    const episodeId = `foc-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    focusEpisodeRef.current = { id: episodeId, fired: false };
+
+    focusTimerRef.current = setTimeout(() => {
+      if (focusEpisodeRef.current && !focusEpisodeRef.current.fired) {
+        focusEpisodeRef.current.fired = true;
+        onFocus?.(product.id, focusEpisodeRef.current.id);
+      }
+    }, 900);
+  };
+
+  const handleBlur = () => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = null;
+    }
+    focusEpisodeRef.current = null;
+  };
+
+  const handleCardClick = () => {
     onView?.(product.id);
+  };
+
+  const handleAdd = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (hasOffer) {
       onAddToCart(
         product,
@@ -47,11 +112,18 @@ export function ProductCard({
 
   return (
     <div
-      onClick={() => onView?.(product.id)}
-      onMouseEnter={() => onView?.(product.id)}
-      className={`bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between group cursor-pointer ${
-      hasOffer ? 'border-indigo-300 ring-1 ring-indigo-200/50' : 'border-slate-200/90 hover:border-slate-300'
-    }`}>
+      onClick={handleCardClick}
+      onMouseEnter={handlePointerEnter}
+      onMouseLeave={handlePointerLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      tabIndex={0}
+      role="article"
+      aria-label={`${product.name}, price $${finalPrice.toFixed(2)}`}
+      className={`bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between group cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+        hasOffer ? 'border-indigo-300 ring-1 ring-indigo-200/50' : 'border-slate-200/90 hover:border-slate-300'
+      }`}
+    >
       <div>
         {/* Fixed Aspect Image Container */}
         <div className="relative h-44 w-full bg-slate-100 overflow-hidden">
@@ -70,6 +142,14 @@ export function ProductCard({
           <div className="absolute top-2.5 left-2.5">
             <span className="text-[10px] font-semibold tracking-wider uppercase bg-white/95 backdrop-blur-sm text-slate-700 px-2 py-0.5 rounded shadow-sm border border-slate-200/80">
               {product.category}
+            </span>
+          </div>
+
+          {/* Quick View Button on Hover */}
+          <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <span className="bg-white/95 text-slate-900 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md flex items-center space-x-1.5 transform translate-y-1 group-hover:translate-y-0 transition-transform">
+              <Eye className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Quick View</span>
             </span>
           </div>
 
@@ -132,7 +212,7 @@ export function ProductCard({
 
         <button
           onClick={handleAdd}
-          className={`inline-flex items-center justify-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 transition-all shrink-0 ${
+          className={`inline-flex items-center justify-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 transition-all shrink-0 cursor-pointer ${
             justAdded
               ? 'bg-emerald-600 text-white'
               : hasOffer

@@ -3,6 +3,7 @@ import { Search, AlertCircle, RefreshCw, Layers, ShieldCheck, Cpu, Compass, Spar
 import { Product, RecommendationItem, ItemExplanation } from '../types.ts';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { RecommendationCard } from '../components/RecommendationCard.tsx';
+import { ProductDetailModal } from '../components/ProductDetailModal.tsx';
 
 interface StorefrontViewProps {
   products: Product[];
@@ -28,6 +29,8 @@ interface StorefrontViewProps {
   onOpenTransparency?: () => void;
   onViewProduct?: (productId: string) => void;
   onResetSession?: () => void;
+  onHoverProduct?: (productId: string, durationMs: number, episodeId: string) => void;
+  onFocusProduct?: (productId: string, episodeId: string) => void;
 }
 
 const SHOPPING_CONTEXTS = [
@@ -58,9 +61,19 @@ export function StorefrontView({
   onOpenTransparency,
   onViewProduct,
   onResetSession,
+  onHoverProduct,
+  onFocusProduct,
 }: StorefrontViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedDetailProduct, setSelectedDetailProduct] = useState<Product | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  const handleOpenDetail = (product: Product) => {
+    setSelectedDetailProduct(product);
+    setIsDetailOpen(true);
+    onViewProduct?.(product.id);
+  };
 
   // Extract distinct categories dynamically from the catalog
   const categories = useMemo(() => {
@@ -323,13 +336,25 @@ export function StorefrontView({
                   onAddToCart={onAddToCart}
                   cartQuantity={cartQuantities[product.id] || 0}
                   eligibleOffer={eligibleOffersByProductId[product.id]}
-                  onView={onViewProduct}
+                  onView={() => handleOpenDetail(product)}
+                  onHover={onHoverProduct}
+                  onFocus={onFocusProduct}
                 />
               ))}
             </div>
           )}
         </>
       )}
+
+      {/* Deliberate Product Detail Modal */}
+      <ProductDetailModal
+        product={selectedDetailProduct}
+        isOpen={isDetailOpen}
+        onClose={() => setIsDetailOpen(false)}
+        onAddToCart={onAddToCart}
+        eligibleOffer={selectedDetailProduct ? eligibleOffersByProductId[selectedDetailProduct.id] : undefined}
+        cartQuantity={selectedDetailProduct ? (cartQuantities[selectedDetailProduct.id] || 0) : 0}
+      />
     </div>
   );
 }

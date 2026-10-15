@@ -167,6 +167,8 @@ export interface SessionEventCreate {
   product_id?: string;
   shopping_context?: string;
   metadata?: Record<string, unknown>;
+  event_id?: string;
+  timestamp?: string;
 }
 
 export interface SessionEvent {

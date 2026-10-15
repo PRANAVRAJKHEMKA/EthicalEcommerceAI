@@ -107,7 +107,7 @@ class DecisionOrchestrator:
 
         # 1. Input sanitization & catalog verification
         catalog = self.repository.get_all_entities()
-        session_events = self.repository.get_session_events(request.session_id, limit=50)
+        session_events = self.repository.get_session_events(request.session_id, limit=100)
 
         # Retrieve unique product entities for items in cart
         product_ids = [item.product_id for item in request.cart_items] if request.cart_items else []
@@ -148,7 +148,9 @@ class DecisionOrchestrator:
         session_saved_ids: list[str] = []
         session_order_ids: list[str] = []
         session_viewed_ids: list[str] = []
+        session_hovered_ids: list[str] = []
         view_counts: dict[str, int] = {}
+        hover_counts: dict[str, int] = {}
 
         for evt in session_events:
             pid = evt.get("product_id") if isinstance(evt, dict) else getattr(evt, "product_id", "")
@@ -163,6 +165,10 @@ class DecisionOrchestrator:
                 if pid not in session_viewed_ids:
                     session_viewed_ids.append(pid)
                 view_counts[pid] = view_counts.get(pid, 0) + 1
+            elif etype in ("product_hover", "product_focus"):
+                if pid not in session_hovered_ids:
+                    session_hovered_ids.append(pid)
+                hover_counts[pid] = hover_counts.get(pid, 0) + 1
 
         # Anchor Source 2: Saved cart items (weight 0.85)
         saved_ids = list(request.saved_cart_product_ids) if request.saved_cart_product_ids else session_saved_ids
@@ -209,6 +215,21 @@ class DecisionOrchestrator:
                     )
                 )
                 seen_anchor_ids.add(vid)
+
+        # Anchor Source 5: Hovered items (weight 0.40)
+        for hid in session_hovered_ids:
+            if hid not in seen_anchor_ids:
+                h_count = hover_counts.get(hid, 1)
+                anchors.append(
+                    RecommendationAnchor(
+                        product_id=hid,
+                        source="product_hover",
+                        weight=0.40,
+                        age_hours=0.5,
+                        view_count=h_count,
+                    )
+                )
+                seen_anchor_ids.add(hid)
 
         # 4. Run Engine A (Ranked Candidates)
         candidates = self.recommender.find_recommendations(

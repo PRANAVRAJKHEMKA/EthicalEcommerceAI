@@ -20,6 +20,8 @@ Implements the complete 10-stage hybrid recommendation pipeline:
 
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
 import math
 import numpy as np
 
@@ -236,44 +238,96 @@ def calculate_explicit_context_score(
 
     return round(len(intersection) / len(union), 4)
 
+EVENT_INTERACTION_WEIGHTS: dict[str, float] = {
+    "simulated_purchase_completed": 1.00,
+    "order_completed": 1.00,
+    "add_to_cart": 0.80,
+    "cart_item_added": 0.80,
+    "cart_saved": 0.65,
+    "save_cart": 0.65,
+    "product_view": 0.35,
+    "product_viewed": 0.35,
+    "product_hover": 0.10,
+    "product_focus": 0.10,
+    "search_submitted": 0.35,
+    "recommendation_accepted": 0.50,
+    "recommendation_shown": 0.00,
+    "offer_shown": 0.00,
+    "context_selected": 0.00,
+    "remove_from_cart": 0.00,
+    "cart_item_removed": 0.00,
+}
+
 def calculate_session_interest_score(
     candidate_id: str,
     session_events: list | None = None,
     tau_hours: float = 24.0,
+    now_dt: datetime | None = None,
 ) -> float:
-    """Calculates E(p, h) in [0, 1] using exponential recency decay.
+    """Calculates frequency-aware, time-decayed interest score E(p, h) in [0.5, 1.0].
     
-    Formula:
-        z(p, h) = sum_{e in E+} w_e * exp(-Delta t_e / tau) - sum_{e in E-} v_e * exp(-Delta t_e / tau)
-        E(p, h) = 0.5 + 0.5 * tanh(z(p, h))
+    Formula (Milestone 5B):
+        z_p = sum_{e in H_p} w_{type(e)} * exp(-Delta t_e / tau)
+        E(p, h) = 0.5 + 0.5 * tanh(ln(1 + z_p))
     """
     if not session_events:
-        return 0.50  # Neutral baseline
+        return 0.50  # Neutral baseline for products with no observed interaction
 
-    z = 0.0
+    z_p = 0.0
+    now_utc = now_dt or datetime.now(timezone.utc)
+
     for evt in session_events:
-        # Support both SyntheticInteractionEvent objects and dict records
         pid = getattr(evt, "product_id", None) or (evt.get("product_id") if isinstance(evt, dict) else "")
         if pid != candidate_id:
             continue
 
         etype = getattr(evt, "event_type", None) or (evt.get("event_type") if isinstance(evt, dict) else "")
-        age = getattr(evt, "age_hours", None) or 1.0
-        decay = math.exp(-age / tau_hours)
+        base_w = EVENT_INTERACTION_WEIGHTS.get(etype, 0.0)
 
-        if etype in ("product_view", "product_viewed"):
-            z += 0.50 * decay
-        elif etype in ("search_submitted",):
-            z += 0.60 * decay
-        elif etype in ("add_to_cart", "cart_item_added"):
-            z += 1.00 * decay
-        elif etype in ("recommendation_accepted",):
-            z += 1.20 * decay
-        elif etype in ("remove_from_cart", "cart_item_removed"):
-            z -= 1.00 * decay
+        # Check metadata for qualifying hover duration threshold
+        metadata = getattr(evt, "metadata", None) or (evt.get("metadata") if isinstance(evt, dict) else {}) or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except Exception:
+                metadata = {}
 
-    score = 0.5 + 0.5 * math.tanh(z)
-    return round(score, 4)
+        if etype in ("product_hover", "product_focus"):
+            duration_ms = metadata.get("duration_ms")
+            if duration_ms is not None and duration_ms < 700:
+                base_w = 0.00  # Brief hover below 700 ms contributes 0.00
+
+        if base_w <= 0.0:
+            continue
+
+        # Compute Delta t_e in hours
+        age_hours = getattr(evt, "age_hours", None) or (evt.get("age_hours") if isinstance(evt, dict) else None)
+        if age_hours is not None:
+            delta_hours = max(0.0, float(age_hours))
+        else:
+            ts = getattr(evt, "timestamp", None) or (evt.get("timestamp") if isinstance(evt, dict) else None)
+            if ts:
+                try:
+                    ts_str = str(ts)
+                    if ts_str.endswith("Z"):
+                        ts_str = ts_str[:-1] + "+00:00"
+                    evt_dt = datetime.fromisoformat(ts_str)
+                    if evt_dt.tzinfo is None:
+                        evt_dt = evt_dt.replace(tzinfo=timezone.utc)
+                    delta_sec = max(0.0, (now_utc - evt_dt).total_seconds())
+                    delta_hours = delta_sec / 3600.0
+                except Exception:
+                    delta_hours = 0.0
+            else:
+                delta_hours = 0.0
+
+        decay = math.exp(-delta_hours / max(0.1, tau_hours))
+        z_p += base_w * decay
+
+    # Bounded transformation: E(p, h) = 0.5 + 0.5 * tanh(ln(1 + z_p))
+    z_clean = max(0.0, z_p)
+    bounded_score = 0.5 + 0.5 * math.tanh(math.log(1.0 + z_clean))
+    return round(float(bounded_score), 4)
 
 def calculate_price_fit_score(
     candidate: ProductEntity,
@@ -586,6 +640,9 @@ class RecommenderEngine:
         elif any(a[1].source in ("product_view", "product_views") for a in resolved_anchors):
             primary_source = "product_views"
             primary_label = "Inspired by products you've viewed"
+        elif any(a[1].source in ("product_hover", "product_focus") for a in resolved_anchors):
+            primary_source = "product_hover"
+            primary_label = "Items related to your browsing interest"
         elif shopping_context.strip().lower() not in ("all", "general", ""):
             primary_source = "shopping_context"
             primary_label = f"Recommended for your selected {shopping_context.strip().capitalize()} setup"

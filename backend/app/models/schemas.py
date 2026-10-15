@@ -160,10 +160,12 @@ class ExplanationResponse(BaseModel):
 class SessionEventCreate(BaseModel):
     """Schema for recording an anonymous session event (Zero PII)."""
     session_id: str = Field(..., description="Anonymous session identifier")
-    event_type: str = Field(..., description="product_view, search_submitted, add_to_cart, remove_from_cart, cart_saved, recommendation_shown, recommendation_accepted, offer_shown, simulated_purchase_completed")
+    event_type: str = Field(..., description="product_view, product_hover, product_focus, search_submitted, add_to_cart, remove_from_cart, cart_saved, recommendation_shown, recommendation_accepted, offer_shown, simulated_purchase_completed")
     product_id: str = Field(default="", description="Target product ID if applicable")
     shopping_context: str = Field(default="all", description="Declared shopping intent context")
     metadata: dict = Field(default_factory=dict, description="Validated event metadata")
+    event_id: str | None = Field(default=None, description="Optional client-provided unique event ID or idempotency key")
+    timestamp: str | None = Field(default=None, description="Optional ISO timestamp string")
 
 class SessionEvent(BaseModel):
     """Persisted anonymous session event schema."""

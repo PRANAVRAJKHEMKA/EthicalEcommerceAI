@@ -80,17 +80,27 @@ Build mode: learn
   Verify (mechanical): Run 13 dedicated simulation unit tests in `test_simulation_engine.py` (all passing), verify identical seed-42 outputs, verify Blanket 15% margin floor violations, compile frontend bundle (`tsc -b && vite build`), capture live Edge CDP screenshots.
   Commit: `feat(simulation): Milestone 5 three-policy economic simulation comparator and merchant intelligence console`
 
-- [x] **6. Simulated Checkout & End-to-End Verification (Milestone 5)**
+- [x] **5B. Frequency-Aware Interaction Signals & Deliberate Product Detail Inspection (Milestone 5B)**
+  Becomes usable: Repeated legitimate product views carry monotonically increasing, time-decayed weight ($z_p$ formula with $\tau=24.0$h); intentional hover dwell threshold ($\ge 900$ms) isolates genuine interest from incidental pointer swipes; duplicate event idempotency (`INSERT OR IGNORE` with unique client `event_id`); accessible `ProductDetailModal.tsx` for deliberate inspection emitting authentic `product_view` events; bounded tanh transformation $E(p, h) \in [0.5, 1.0)$ guaranteeing repeat interactions cannot hijack recommendations; 101/101 backend unit tests passing; clean frontend build; Edge CDP real-browser verified.
+  Why now: Replaces binary visit tracking with nuanced, tamper-resistant behavioral signals without compromising sub-25ms latency or merchant margin guardrails.
+  PRD ref: `prd.md > Feature B, C, D`, `prd.md > View 1`
+  Spec ref: `spec.md > 3.4 Interaction Scoring`, `spec.md > 5.7 /events`
+  Build: Update `recommender.py` with $z_p$ decay and bounded $E(p, h)$; upgrade `repository.py` and `main.py` for idempotent event ingestion; create `ProductDetailModal.tsx`; update `ProductCard.tsx` with 900ms pointer dwell timer and episode tracking; wire async session recording in `App.tsx` and `StorefrontView.tsx`; write `test_frequency_aware_signals.py` (12 tests); execute CDP real browser verification (`verify_m5b_browser.cjs`).
+  Verify (mechanical): Run 101/101 backend unit tests, compile frontend (`tsc -b && vite build` in 10.71s), verify Edge CDP real-browser automation steps and screenshots (`screenshot_m5b_quick_view_modal.png`, `screenshot_m5b_frequency_recommendations.png`).
+  Commit: `feat(interactions): Milestone 5B frequency-aware interaction signals, product hover, and deliberate view modal`
+
+- [x] **6. Simulated Checkout & End-to-End Verification (Milestone 5 & 5B)**
   Becomes usable: Shopper can complete simulated zero-payment checkout, receive an itemized order receipt, reset session, and observe continuous synchronization across all 4 UI touchpoints, SQLite persistence, and offline fallbacks.
   Why now: Closes the full shopper loop and completes the proof of concept ahead of deployment and Devpost submission.
   PRD ref: `prd.md > 1. Shopper Journey (Step 6)`
   Spec ref: `spec.md > 7. Testing Strategy`
-  Build: Complete checkout modal with itemized pricing, transparent savings breakdown, and zero-payment disclosure; full backend test pass (89/89 tests passing); CDP screenshot verification across Storefront, Merchant Console, and Decision Engine.
-  Verify (mechanical): Run full 89-test suite in `python -m unittest discover -s backend/tests`, verify zero TypeScript errors, verify live backend and frontend server connectivity.
+  Build: Complete checkout modal with itemized pricing, transparent savings breakdown, and zero-payment disclosure; full backend test pass (101/101 tests passing); CDP screenshot verification across Storefront, Merchant Console, and Decision Engine.
+  Verify (mechanical): Run full 101-test suite in `python -m unittest discover -s backend/tests`, verify zero TypeScript errors, verify live backend and frontend server connectivity.
   Commit: `feat(simulation): Milestone 5 three-policy economic simulation comparator and merchant intelligence console`
 
 ## Hands-on Checkpoints
 - [x] Checkpoint 1 (After Slice 1): Verify backend health check and database seeding.
 - [x] Checkpoint 2 (After Slice 3): Try shopping in the storefront and verify that margin floors prevent invalid discounts.
 - [x] Checkpoint 3 (After Slice 5): Run the 3-policy simulation and review comparative metrics.
+- [x] Checkpoint 4 (After Slice 5B): Verify intentional hover dwell thresholds and deliberate modal views in live browser.
 - [ ] Final Review (After Slice 6): Walk through the complete 2-minute demo script before packaging for Devpost.
