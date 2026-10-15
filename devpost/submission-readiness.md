@@ -96,7 +96,7 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 
 | # | Competition Deliverable | Exact Path or Target URL | Current Verification Evidence | Audit Status | Responsibility |
 | :-: | :--- | :--- | :--- | :-: | :--- |
-| **1** | **Public Git Repository** | `https://github.com/<user>/EthicalEcommerceAI` | Local Git repository clean at checkpoint `fa7e73b`. Remote origin not yet linked to avoid unconfirmed push. | **NEEDS REVIEW** | **Learner Action** (Link remote & push) |
+| **1** | **Public Git Repository** | [`https://github.com/PRANAVRAJKHEMKA/EthicalEcommerceAI`](https://github.com/PRANAVRAJKHEMKA/EthicalEcommerceAI) | Published to GitHub `main` branch. 77 tracked files verified. Zero secrets or private profiles exposed. | **PASS** | Verified Live |
 | **2** | **Required Planning Documents** | [`devpost/scope.md`](scope.md)<br>[`devpost/prd.md`](prd.md)<br>[`devpost/spec.md`](spec.md)<br>[`devpost/checklist.md`](checklist.md)<br>[`devpost/app-map.html`](app-map.html) | All 5 files exist with approved YAML frontmatter (`status: approved`). Zero placeholders. 100% consistent with implementation. | **PASS** | Automated / Verified |
 | **3** | **Open-Source LICENSE** | [`LICENSE`](../LICENSE) | Standard permissive MIT License with 2026 copyright attribution. Required for public open-source entry. | **PASS** | Automated / Verified |
 | **4** | **README & Setup Guide** | [`README.md`](../README.md) | Comprehensive markdown: overview, local setup, demo persona guide, dual-persistence docs, Docker specs, track alignment. | **PASS** | Automated / Verified |
