@@ -90,11 +90,12 @@ FairCart AI deliberately avoids server-side shopper sessions, tracking cookies, 
 
 - **Database File:** Local `faircart.db` stored in the backend root directory.
 - **Write-Ahead Logging (WAL):** Enabled via `PRAGMA journal_mode = WAL` and `PRAGMA synchronous = NORMAL` for high concurrency without database lock contention.
-- **Schema Separation (4 Tables):**
+- **Schema Separation (5 Tables):**
   1. `products`: Curated 32-item catalog, metadata, COGS, inventory, complementary connections, tags, use cases.
-  2. `merchant_settings`: Dynamic operational parameters (`min_margin_floor`, `max_discount_cap`, `dwell_threshold_seconds`, `ai_explanation_mode`).
+  2. `merchant_settings`: Dynamic operational parameters (`margin_floor`, `discount_cap`).
   3. `basket_association_rules`: 980 Apriori co-occurrence rules with antecedent subsets, support, raw confidence, Laplace-smoothed confidence ($\alpha=1.0$), and bounded logarithmic lift.
-  4. `session_events`: Privacy-preserving anonymous interaction telemetry (`product_view`, `add_to_cart`, `cart_remove`, `search_submitted`, `recommendation_accepted`) with zero PII and full lifecycle deletion (`DELETE /api/v1/events`).
+  4. `session_events`: Privacy-preserving anonymous interaction telemetry (`product_view`, `add_to_cart`, `cart_remove`, `search_submitted`, `recommendation_accepted`, `simulated_purchase_completed`) with zero PII and full lifecycle deletion (`DELETE /api/v1/events`).
+  5. `simulation_runs`: Stores completed 3-policy simulation comparator results (`run_id`, `timestamp`, `random_seed`, `num_sessions`, `margin_floor`, `discount_cap`, `results_json`, `execution_latency_ms`) indexed by timestamp for immediate retrieval and historical auditability.
 - **Machine Learning Model Artifact:**
   - `backend/app/engine/artifacts/ranker_model.joblib` (195 kB): Pre-trained `HistGradientBoostingClassifier` trained on 14 candidate features across 1,600 synthetic shopping sessions. Loaded into memory at application startup (<15ms load time) with automatic deterministic fallback to $S_{hybrid}$.
 - **Disk Persistence on Cloud Providers:**

@@ -179,3 +179,84 @@ export interface SessionEvent {
   timestamp: string;
 }
 
+export interface SimulationRequest {
+  num_sessions?: number;
+  random_seed?: number;
+  margin_floor?: number;
+  discount_cap?: number;
+}
+
+export interface PolicyMetrics {
+  policy_id: string;
+  policy_name: string;
+  description: string;
+  sessions_count: number;
+  completed_orders_count: number;
+  conversion_rate: number;
+  conversion_rate_ci_95: [number, number];
+  average_order_value: number;
+  total_gross_sales: number;
+  total_net_sales_revenue: number;
+  total_incentive_expense: number;
+  total_cogs: number;
+  total_contribution_profit: number;
+  avg_contribution_profit_per_session: number;
+  avg_contribution_profit_per_session_ci_95: [number, number];
+  avg_contribution_profit_per_order: number;
+  total_gross_margin: number;
+  order_avg_gross_margin: number;
+  margin_floor_violations_count: number;
+  margin_floor_violation_rate: number;
+  recommendations_surfaced_count: number;
+  recommendations_accepted_count: number;
+  recommendation_acceptance_rate: number;
+}
+
+export interface SimulationResponse {
+  simulation_id: string;
+  timestamp: string;
+  version: string;
+  parameters: {
+    num_sessions: number;
+    random_seed: number;
+    margin_floor: number;
+    discount_cap: number;
+    variable_fulfillment_cost_per_order: number;
+  };
+  active_merchant_settings: {
+    margin_floor: number;
+    discount_cap: number;
+  };
+  policies: Record<string, PolicyMetrics>;
+  relative_comparison: {
+    vs_no_discount: {
+      contribution_profit_delta: number;
+      contribution_profit_pct: number;
+      conversion_rate_delta_pp: number;
+      aov_delta: number;
+      aov_pct: number;
+    };
+    vs_blanket_15: {
+      contribution_profit_delta: number;
+      contribution_profit_pct: number;
+      incentive_expense_reduction: number;
+      incentive_expense_reduction_pct: number;
+      margin_floor_violations_avoided: number;
+      gross_margin_delta_pp: number;
+    };
+  };
+  dataset_provenance: {
+    methodology: string;
+    disclaimer: string;
+    archetype_distribution: Record<string, number>;
+    total_catalog_products: number;
+  };
+  run_metadata: {
+    execution_latency_ms: number;
+    recommender_mode: string;
+    optimizer_margin_floor: number;
+    optimizer_discount_cap: number;
+  };
+}
+
+

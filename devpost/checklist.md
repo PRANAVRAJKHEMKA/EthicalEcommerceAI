@@ -71,26 +71,26 @@ Build mode: learn
   Verify (mechanical): Run 76/76 backend unit tests, compile frontend (`tsc -b && vite build` in 2.44s), verify CDP screenshots (`screenshot_m4c_cold_start.png`, `screenshot_m4c_context_based.png`, `screenshot_m4c_view_based.png`).
   Commit: `feat(recsys): Milestone 4C empty-basket recommendations, historical personalization, and cold-start fallback`
 
-- [ ] **5. 3-Policy Simulation Comparator (Milestone 5)**
-  Becomes usable: Merchant can run a 1,000-session 3-policy simulation comparator directly from the Merchant Console to evaluate No Discount vs Blanket 15% vs FairCart AI with reproducible fixed seeds (`seed=42`).
-  Why now: Demonstrates the economic superiority of margin-aware value optimization over blanket discounting.
+- [x] **5. 3-Policy Simulation Comparator (Milestone 5)**
+  Becomes usable: Merchant can run a 1,000-session 3-policy simulation comparator directly from the Merchant Console to evaluate No Discount vs Blanket 15% vs FairCart AI with reproducible fixed seeds (`seed=42`) using paired Common Random Numbers (CRN) across 9 archetypes.
+  Why now: Demonstrates the economic superiority of margin-aware value optimization over blanket discounting and provides empirical proof of margin-floor preservation.
   PRD ref: `prd.md > Feature F`, `prd.md > View 2`
   Spec ref: `spec.md > 5.5 /simulate`, `spec.md > 6. Component 6`
-  Build: Implement `POST /api/v1/simulate` with fixed seeds (`seed=42`); connect simulation runner and metrics visualization in Merchant Console.
-  Verify (mechanical): Verify reproducibility of simulation metrics across runs.
-  Commit: `Milestone 5: Implement 3-policy economic simulation comparator`
+  Build: Implement `POST /api/v1/simulate` with paired CRN evaluation, 9 shopper archetypes, exact accounting formulas, 95% confidence intervals, and SQLite persistence (`simulation_runs` table); implement `GET /api/v1/simulate/latest`; build interactive simulation controls, side-by-side policy cards, SVG visual comparison charts, and comprehensive metrics table in `MerchantView.tsx`.
+  Verify (mechanical): Run 13 dedicated simulation unit tests in `test_simulation_engine.py` (all passing), verify identical seed-42 outputs, verify Blanket 15% margin floor violations, compile frontend bundle (`tsc -b && vite build`), capture live Edge CDP screenshots.
+  Commit: `feat(simulation): Milestone 5 three-policy economic simulation comparator and merchant intelligence console`
 
-- [ ] **6. Simulated Checkout & End-to-End Verification (Milestone 5)**
-  Becomes usable: Shopper can complete simulated zero-payment checkout, receive an order receipt, and reset session.
-  Why now: Closes the full shopper loop and completes the proof of concept.
+- [x] **6. Simulated Checkout & End-to-End Verification (Milestone 5)**
+  Becomes usable: Shopper can complete simulated zero-payment checkout, receive an itemized order receipt, reset session, and observe continuous synchronization across all 4 UI touchpoints, SQLite persistence, and offline fallbacks.
+  Why now: Closes the full shopper loop and completes the proof of concept ahead of deployment and Devpost submission.
   PRD ref: `prd.md > 1. Shopper Journey (Step 6)`
   Spec ref: `spec.md > 7. Testing Strategy`
-  Build: Implement checkout modal and session reset; run comprehensive test pass.
-  Verify (mechanical): Run full unittest suite and verify end-to-end journey.
-  Commit: `Milestone 5: Implement simulated checkout and verify end-to-end system`
+  Build: Complete checkout modal with itemized pricing, transparent savings breakdown, and zero-payment disclosure; full backend test pass (89/89 tests passing); CDP screenshot verification across Storefront, Merchant Console, and Decision Engine.
+  Verify (mechanical): Run full 89-test suite in `python -m unittest discover -s backend/tests`, verify zero TypeScript errors, verify live backend and frontend server connectivity.
+  Commit: `feat(simulation): Milestone 5 three-policy economic simulation comparator and merchant intelligence console`
 
 ## Hands-on Checkpoints
 - [x] Checkpoint 1 (After Slice 1): Verify backend health check and database seeding.
 - [x] Checkpoint 2 (After Slice 3): Try shopping in the storefront and verify that margin floors prevent invalid discounts.
-- [ ] Checkpoint 3 (After Slice 5): Run the 3-policy simulation and review comparative metrics.
+- [x] Checkpoint 3 (After Slice 5): Run the 3-policy simulation and review comparative metrics.
 - [ ] Final Review (After Slice 6): Walk through the complete 2-minute demo script before packaging for Devpost.

@@ -163,6 +163,30 @@ FairCart AI evaluates recommendations even when the active basket is empty ($B =
    $$\text{is\_offered} = \text{False}, \quad \text{tier} = \text{"NONE"}, \quad \text{savings} = 0.0, \quad \text{final\_price} = \text{reference\_price}$$
    Items in $A \setminus B$ never trigger unearned promotional discounts.
 
+### 3.8 Three-Policy Economic Simulation Comparator & Paired Evaluation Model
+FairCart AI evaluates counterfactual e-commerce outcomes across three distinct pricing policies using paired simulation:
+1. **Policies Evaluated:**
+   - $\pi_{\text{NO\_DISCOUNT}}$: Organic baseline. Zero promotional markdowns.
+   - $\pi_{\text{BLANKET\_15}}$: Indiscriminate 15% promotional discount on all eligible product lines in completed purchases, without margin floor verification.
+   - $\pi_{\text{FAIRCART\_AI}}$: Context-aware hybrid recommendation coupled with margin-constrained incentive optimization ($gross\_margin \ge margin\_floor$).
+
+2. **Common Random Numbers (CRN) Paired Evaluation:**
+   To guarantee that comparative differences reflect causal policy effects rather than sampling variance, all policies evaluate the identical sequence of synthetic shoppers:
+   - Shared seed $S$ (default 42).
+   - Paired conversion draw: $u_{\text{conv}} \sim U(0, 1)$.
+   - Paired recommendation acceptance draw: $u_{\text{acc}} \sim U(0, 1)$.
+   - Identical base conversion propensities $p_{\text{base}}$ and price-elasticity multipliers $\Delta p_{\text{discount}}$.
+
+3. **Shopper Archetype Distribution (9 Archetypes):**
+   - Cold-Start Explorer (15%), Browse-Only Researcher (15%), Saved-Cart Returner (10%), Multi-Item Builder (15%), Gaming Enthusiast (10%), Study/Wellness/Travel Context (10%), Inelastic High-Intent (10%), Price-Sensitive Deal Seeker (10%), Low-Margin Discount-Ineligible (5%).
+
+4. **Rigorous Accounting Invariants:**
+   - $\text{net\_sales\_revenue} = \text{gross\_sales} - \text{discounts}$
+   - $\text{gross\_margin} = \frac{\text{net\_sales} - \text{COGS}}{\text{net\_sales}} \quad (\text{or } 0.0 \text{ if } \text{net} \le 0)$
+   - $\text{contribution\_profit} = \text{net\_sales} - \text{COGS} - (\text{completed\_orders} \times \$3.50)$
+   - Margin floor violation: recorded whenever an order under policy $\pi$ completes with basket gross margin $< margin\_floor$.
+   - 95% Confidence Intervals computed for conversion rates and average contribution profit per session.
+
 ---
 
 ## 4. Stack & Environment Configuration
@@ -353,47 +377,149 @@ Enriches the recommendation card with customer-facing explanatory copy.
 ```
 *(If the Gemini API key is missing or the call times out after 1.5s, it returns `fallback_applied: true` with pre-validated deterministic copy).*
 
-### 5.5 `POST /api/v1/simulate`
-Executes the reproducible 1,000-session 3-policy simulation comparator.
-- **Request Body:**
+### 5.5 `POST /api/v1/simulate` & `GET /api/v1/simulate/latest`
+Executes or retrieves the reproducible 1,000-session 3-policy simulation comparator.
+- **Request Body (`POST /api/v1/simulate`):**
 ```json
 {
   "num_sessions": 1000,
   "random_seed": 42,
   "margin_floor": 0.20,
-  "discount_cap": 0.15
+  "discount_cap": 0.20
 }
 ```
-- **Response `200 OK`:**
+- **Response `200 OK` (`SimulationResponse`):**
 ```json
 {
-  "simulation_metadata": {
-    "sessions_evaluated": 1000,
+  "simulation_id": "sim-f22b6a874e",
+  "timestamp": "2026-10-15T18:07:01.123456+00:00",
+  "version": "1.0",
+  "parameters": {
+    "num_sessions": 1000,
     "random_seed": 42,
-    "label": "Synthetic Benchmark Simulation"
+    "margin_floor": 0.20,
+    "discount_cap": 0.20,
+    "variable_fulfillment_cost_per_order": 3.50
+  },
+  "active_merchant_settings": {
+    "margin_floor": 0.20,
+    "discount_cap": 0.20
   },
   "policies": {
-    "no_discount": {
+    "NO_DISCOUNT": {
+      "policy_id": "NO_DISCOUNT",
       "policy_name": "No Discount (Organic Baseline)",
-      "total_contribution_profit": 18240.00,
-      "total_incentive_spend": 0.00,
-      "conversion_rate": 0.224,
-      "average_order_value": 81.42
+      "description": "Organic shopping behavior with zero promotional markdowns.",
+      "sessions_count": 1000,
+      "completed_orders_count": 316,
+      "conversion_rate": 0.316,
+      "conversion_rate_ci_95": [0.2872, 0.3448],
+      "average_order_value": 46.99,
+      "total_gross_sales": 14849.00,
+      "total_net_sales_revenue": 14849.00,
+      "total_incentive_expense": 0.00,
+      "total_cogs": 6363.00,
+      "total_contribution_profit": 7380.00,
+      "avg_contribution_profit_per_session": 7.38,
+      "avg_contribution_profit_per_session_ci_95": [6.58, 8.18],
+      "avg_contribution_profit_per_order": 23.35,
+      "total_gross_margin": 0.5714,
+      "order_avg_gross_margin": 0.5714,
+      "margin_floor_violations_count": 0,
+      "margin_floor_violation_rate": 0.0,
+      "recommendations_surfaced_count": 0,
+      "recommendations_accepted_count": 0,
+      "recommendation_acceptance_rate": 0.0
     },
-    "blanket_discount": {
-      "policy_name": "Blanket 15% Discount",
-      "total_contribution_profit": 15410.50,
-      "total_incentive_spend": 4120.00,
-      "conversion_rate": 0.281,
-      "average_order_value": 73.10
+    "BLANKET_15": {
+      "policy_id": "BLANKET_15",
+      "policy_name": "Blanket 15% Markdown",
+      "description": "Fixed 15% promotional discount on eligible completed purchases without margin floor enforcement.",
+      "sessions_count": 1000,
+      "completed_orders_count": 381,
+      "conversion_rate": 0.381,
+      "conversion_rate_ci_95": [0.3508, 0.4112],
+      "average_order_value": 40.00,
+      "total_gross_sales": 17930.00,
+      "total_net_sales_revenue": 15240.50,
+      "total_incentive_expense": 2689.50,
+      "total_cogs": 7696.00,
+      "total_contribution_profit": 6211.00,
+      "avg_contribution_profit_per_session": 6.21,
+      "avg_contribution_profit_per_session_ci_95": [5.61, 6.81],
+      "avg_contribution_profit_per_order": 16.30,
+      "total_gross_margin": 0.4950,
+      "order_avg_gross_margin": 0.4950,
+      "margin_floor_violations_count": 46,
+      "margin_floor_violation_rate": 0.1207,
+      "recommendations_surfaced_count": 0,
+      "recommendations_accepted_count": 0,
+      "recommendation_acceptance_rate": 0.0
     },
-    "faircart_ai": {
-      "policy_name": "FairCart AI (Value Optimizer)",
-      "total_contribution_profit": 20185.00,
-      "total_incentive_spend": 1240.00,
-      "conversion_rate": 0.268,
-      "average_order_value": 89.20
+    "FAIRCART_AI": {
+      "policy_id": "FAIRCART_AI",
+      "policy_name": "FairCart AI (Margin-Constrained)",
+      "description": "Context-aware hybrid recommendations with mathematical gross margin floors and discount caps.",
+      "sessions_count": 1000,
+      "completed_orders_count": 335,
+      "conversion_rate": 0.335,
+      "conversion_rate_ci_95": [0.3058, 0.3642],
+      "average_order_value": 66.86,
+      "total_gross_sales": 23762.00,
+      "total_net_sales_revenue": 22396.65,
+      "total_incentive_expense": 1365.35,
+      "total_cogs": 10169.50,
+      "total_contribution_profit": 11054.65,
+      "avg_contribution_profit_per_session": 11.05,
+      "avg_contribution_profit_per_session_ci_95": [9.91, 12.19],
+      "avg_contribution_profit_per_order": 33.00,
+      "total_gross_margin": 0.5459,
+      "order_avg_gross_margin": 0.5459,
+      "margin_floor_violations_count": 0,
+      "margin_floor_violation_rate": 0.0,
+      "recommendations_surfaced_count": 335,
+      "recommendations_accepted_count": 210,
+      "recommendation_acceptance_rate": 0.6269
     }
+  },
+  "relative_comparison": {
+    "vs_no_discount": {
+      "contribution_profit_delta": 3674.65,
+      "contribution_profit_pct": 49.79,
+      "conversion_rate_delta_pp": 1.90,
+      "aov_delta": 19.87,
+      "aov_pct": 42.29
+    },
+    "vs_blanket_15": {
+      "contribution_profit_delta": 4843.65,
+      "contribution_profit_pct": 77.99,
+      "incentive_expense_reduction": 1324.15,
+      "incentive_expense_reduction_pct": 49.23,
+      "margin_floor_violations_avoided": 46,
+      "gross_margin_delta_pp": 5.09
+    }
+  },
+  "dataset_provenance": {
+    "methodology": "Paired synthetic simulation evaluated via Common Random Numbers (CRN) across 9 distinct shopper archetypes.",
+    "disclaimer": "All figures generated via synthetic simulation with seeded pseudo-random draws. Not live consumer A/B test results. Evaluates algorithmic guardrails and mathematical consistency.",
+    "archetype_distribution": {
+      "cold_start": 150,
+      "browse_only": 150,
+      "saved_cart": 100,
+      "multi_item_builder": 150,
+      "gaming_context": 100,
+      "study_wellness_travel": 100,
+      "inelastic_high_intent": 100,
+      "price_sensitive": 100,
+      "low_margin_ineligible": 50
+    },
+    "total_catalog_products": 32
+  },
+  "run_metadata": {
+    "execution_latency_ms": 1072.4,
+    "recommender_mode": "hybrid",
+    "optimizer_margin_floor": 0.20,
+    "optimizer_discount_cap": 0.20
   }
 }
 ```

@@ -174,3 +174,49 @@ class SessionEvent(BaseModel):
     shopping_context: str
     metadata: dict
     timestamp: str
+
+class SimulationRequest(BaseModel):
+    """Request payload for running the 3-policy economic simulation comparator."""
+    num_sessions: int = Field(default=1000, ge=10, le=10000, description="Number of synthetic sessions to simulate")
+    random_seed: int = Field(default=42, description="Pseudorandom seed for reproducible paired scenario generation")
+    margin_floor: float | None = Field(default=None, ge=0.0, le=1.0, description="Override gross margin floor (defaults to active SQLite merchant setting)")
+    discount_cap: float | None = Field(default=None, ge=0.0, le=0.50, description="Override discount cap (defaults to active SQLite merchant setting)")
+
+class PolicyMetrics(BaseModel):
+    """Authoritative aggregated financial and conversion metrics for a simulated policy."""
+    policy_id: str
+    policy_name: str
+    description: str
+    sessions_count: int
+    completed_orders_count: int
+    conversion_rate: float
+    conversion_rate_ci_95: list[float]
+    average_order_value: float
+    total_gross_sales: float
+    total_net_sales_revenue: float
+    total_incentive_expense: float
+    total_cogs: float
+    total_contribution_profit: float
+    avg_contribution_profit_per_session: float
+    avg_contribution_profit_per_session_ci_95: list[float]
+    avg_contribution_profit_per_order: float
+    total_gross_margin: float
+    order_avg_gross_margin: float
+    margin_floor_violations_count: int
+    margin_floor_violation_rate: float
+    recommendations_surfaced_count: int = 0
+    recommendations_accepted_count: int = 0
+    recommendation_acceptance_rate: float = 0.0
+
+class SimulationResponse(BaseModel):
+    """Response schema for the POST /api/v1/simulate comparator."""
+    simulation_id: str
+    timestamp: str
+    version: str = "1.0.0"
+    parameters: dict
+    active_merchant_settings: dict
+    policies: dict[str, PolicyMetrics]
+    relative_comparison: dict
+    dataset_provenance: dict
+    run_metadata: dict
+

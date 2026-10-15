@@ -115,6 +115,21 @@ def init_db(db_path: str | None = None) -> None:
         # Indexes for fast candidate filtering
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_use_cases ON products(use_cases);")
+
+        # Simulation Runs: stores historical 3-policy simulation comparator results
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS simulation_runs (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                random_seed INTEGER NOT NULL,
+                num_sessions INTEGER NOT NULL,
+                margin_floor REAL NOT NULL,
+                discount_cap REAL NOT NULL,
+                results_json TEXT NOT NULL,
+                execution_latency_ms REAL NOT NULL
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sim_runs_timestamp ON simulation_runs(timestamp);")
         conn.commit()
     finally:
         conn.close()

@@ -603,7 +603,48 @@
 - **How to Explain to Judges:**
   "Most recommendation engines show a blank screen or spam generic ads until you add an item to your cart. FairCart AI introduces an anchor model that recommends relevant accessories based on products you've inspected, saved items, or your selected setup goal. But ethically, we strictly separate discovery from pricing: you can never get an unearned bundle discount without actually buying the parent item in your active basket. And when a shopper is completely new, our cold-start formula recommends popular, versatile catalog staples with full honesty—never pretending to know them."
 
-- **Status:** **Implemented, Tested & Verified (in Milestone 4C)**.
+---
+
+### DEC-022: Three-Policy Economic Simulation Comparator & Merchant Analytics (Milestone 5)
+
+- **What We Decided & Implemented:**
+  1. **Three-Policy Counterfactual Comparator (`POST /api/v1/simulate`):**
+     - Implemented an economic simulation engine comparing three distinct pricing and recommendation policies:
+       1. `NO_DISCOUNT`: Organic baseline shopping behavior with zero promotional markdowns.
+       2. `BLANKET_15`: Indiscriminate 15% promotional markdown across all completed order items, without margin floor verification.
+       3. `FAIRCART_AI`: Context-aware hybrid recommendation engine coupled with the margin-constrained economic incentive optimizer.
+  2. **Paired Evaluation with Common Random Numbers (CRN):**
+     - Evaluates 1,000 paired customer shopping sessions with deterministic pseudo-random seed (default `42`).
+     - Employs Common Random Numbers (CRN) so all three policies confront the exact same synthetic shoppers, cart builds, price sensitivity draws, and stochastic purchase acceptance thresholds ($u_{\text{conv}}, u_{\text{acc}}$).
+     - Isolates the causal economic impact of the policy and eliminates cross-cohort sampling variance.
+  3. **9 Realistic Shopper Archetypes:**
+     - Simulates an authentic e-commerce population across 9 distinct behavioral archetypes:
+       - Cold-Start Explorer (15%), Browse-Only Researcher (15%), Saved-Cart Returner (10%), Multi-Item Setup Builder (15%), Gaming Enthusiast (10%), Study/Wellness/Travel Context Shopper (10%), Inelastic High-Intent Buyer (10%), Price-Sensitive Deal Seeker (10%), Low-Margin Discount-Ineligible Shopper (5%).
+  4. **Strict Financial Accounting & Statistical Invariants:**
+     - Enforces rigorous e-commerce accounting formulas:
+       $$\text{net\_sales\_revenue} = \text{gross\_sales} - \text{discounts}$$
+       $$\text{gross\_margin} = \frac{\text{net\_sales} - \text{COGS}}{\text{net\_sales}} \quad (\text{or } 0.0 \text{ if } \text{net} \le 0)$$
+       $$\text{contribution\_profit} = \text{net\_sales} - \text{COGS} - (\text{orders} \times \$3.50 \text{ variable fulfillment})$$
+     - Zero double-counting of discounts; complete safeguard against `ZeroDivisionError` on empty cohorts.
+     - Computes two-sided 95% Confidence Intervals for both conversion rates and session contribution profits.
+  5. **Empirical Findings from 1,000-Session Evaluation (Seed 42):**
+     - **Contribution Profit:** FairCart AI delivered **$11,054.65** (95% CI: [$9.91, $12.19]/session), outperforming Blanket 15% (**$6,211.00**, +78.0%) and No Discount (**$7,380.00**, +49.8%).
+     - **Margin Floor Preservation:** Blanket 15% markdown caused **46 margin floor breaches (12.1% of completed orders)**, severely destroying merchant profit on low-margin products. FairCart AI incurred **0 violations (0.0% · 100% compliant)**.
+     - **Promotional Efficiency:** FairCart AI reduced promotional waste by **$1,324.15 (-49.2%)** compared to Blanket 15%, while expanding Average Order Value from $46.99 (organic) and $40.00 (blanket) to **$66.86 (+42.3%)**.
+  6. **Interactive Merchant Console UI (`MerchantView.tsx`):**
+     - Built interactive simulation controls: configurable session count (250–2,500), seed input, and active margin floor / discount cap indicators.
+     - Side-by-side policy comparison cards displaying contribution profits, conversion rates, AOVs, margins, and violation alerts.
+     - Embedded responsive SVG charts comparing contribution profits and conversion rates alongside margin safety indicators.
+     - Comprehensive 11-row metric comparison matrix and transparent synthetic methodology disclosure.
+  7. **Automated Verification:**
+     - 89/89 backend unit tests pass in 81s, including 13 dedicated simulation tests in `test_simulation_engine.py`.
+     - In-memory anchor extraction in `orchestrator.py` reduces decision latency to sub-millisecond execution.
+     - Live Edge CDP screenshots captured: `screenshot_m5_merchant_simulation.png`, `screenshot_m5_simulation_charts.png`, and `screenshot_m5_merchant_console_full.png`.
+
+- **How to Explain to Judges:**
+  "Merchants usually face a painful dilemma: either offer no discounts and lose price-sensitive shoppers, or run a blunt 15% storewide sale that erodes profits and loses money on low-margin items. In our 1,000-session paired simulation, we show that Blanket 15% caused 46 margin-floor violations, cutting total merchant profit down to $6,211. FairCart AI lifted contribution profit to $11,054—a 78% increase over blanket discounting—by recommending high-synergy products and offering discounts only when the merchant's margin floor was mathematically safe. Zero margin floor breaches, less promotional waste, and higher average order value."
+
+- **Status:** **Implemented, Tested & Verified (in Milestone 5)**.
 
 ---
 
@@ -634,13 +675,13 @@
 | **Transparent Shopper Offer Card** | PRD §4.D | **Implemented (`RecommendationCard.tsx`)** | **Passed (CDP screenshots verified)** |
 | **"How Offers Work" Disclosure Modal** | PRD §1.5 | **Implemented (`TransparencyModal.tsx`)** | **Passed (Full dual-engine transparency)** |
 | **Anonymous Session Interaction Events** | Spec §5.7 | **Implemented (`POST/GET/DELETE /api/v1/events`)** | **Passed (Zero-PII session lifecycle logging)** |
-| **Automated Test Suite (Full Backend)** | PRD §7 | **Implemented (`backend/tests/`)** | **Passed (76/76 backend unit tests passing in ~20s)** |
-| **3-Policy Synthetic Simulation Engine**| PRD §4.F | Planned (Milestone 5) | Not Run |
+| **3-Policy Synthetic Simulation Engine**| PRD §4.F | **Implemented (`simulator.py`)** | **Passed (1,000 paired CRN sessions, 13 unittests, Edge CDP verified)** |
+| **Automated Test Suite (Full Backend)** | PRD §7 | **Implemented (`backend/tests/`)** | **Passed (89/89 backend unit tests passing in ~81s)** |
 
 ---
 
 ## 5. Testing & Verification Evidence
-*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, Milestone 3 Decision Engine, Milestone 4 Product Refinement, and Milestone 4B Hybrid ML & RecSys Pipeline executed and verified.*
+*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, Milestone 3 Decision Engine, Milestone 4 Product Refinement, Milestone 4B Hybrid ML & RecSys Pipeline, Milestone 4C Cold-Start Intelligence, and Milestone 5 Economic Simulation Comparator executed and verified.*
 
 - [x] **Database Initialization & Seeding:** `test_database_has_twenty_products` and 32-item catalog seed passed (verified 32 validated items loaded into `faircart.db`).
 - [x] **Product Financial Positivity & COGS Invariant:** `test_product_schema_and_financial_positivity` passed (verified 0 < COGS < RefPrice and positive inventory for all products).

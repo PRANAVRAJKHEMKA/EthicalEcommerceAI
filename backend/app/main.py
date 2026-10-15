@@ -18,7 +18,10 @@ from backend.app.models.schemas import (
     Product,
     QuoteRequest,
     SessionEventCreate,
+    SimulationRequest,
+    SimulationResponse,
 )
+from backend.app.engine.simulator import EconomicSimulator
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -134,6 +137,34 @@ def update_settings(req: MerchantSettingsRequest):
         return {"status": "updated", "margin_floor": req.margin_floor, "discount_cap": req.discount_cap}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save merchant settings: {str(e)}")
+
+@app.post("/api/v1/simulate", response_model=SimulationResponse, tags=["Economic Simulation"])
+def run_economic_simulation(request: SimulationRequest) -> SimulationResponse:
+    """Executes a reproducible 3-policy simulation comparator with Common Random Numbers."""
+    try:
+        simulator = EconomicSimulator()
+        return simulator.run_simulation(
+            num_sessions=request.num_sessions,
+            random_seed=request.random_seed,
+            margin_floor=request.margin_floor,
+            discount_cap=request.discount_cap,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation error: {str(e)}")
+
+@app.get("/api/v1/simulate/latest", tags=["Economic Simulation"])
+def get_latest_simulation():
+    """Retrieves the latest persisted simulation run from SQLite."""
+    try:
+        repo = CatalogRepository()
+        latest = repo.get_latest_simulation_run()
+        if not latest:
+            raise HTTPException(status_code=404, detail="No simulation runs found")
+        return latest
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch simulation run: {str(e)}")
 
 ALLOWED_EVENT_TYPES = {
     "product_view",

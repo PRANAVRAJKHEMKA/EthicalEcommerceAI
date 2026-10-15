@@ -144,10 +144,28 @@ class DecisionOrchestrator:
             )
             seen_anchor_ids.add(entity.id)
 
+        # Extract in-memory anchors from already-fetched session_events (sub-millisecond)
+        session_saved_ids: list[str] = []
+        session_order_ids: list[str] = []
+        session_viewed_ids: list[str] = []
+        view_counts: dict[str, int] = {}
+
+        for evt in session_events:
+            pid = evt.get("product_id") if isinstance(evt, dict) else getattr(evt, "product_id", "")
+            etype = evt.get("event_type") if isinstance(evt, dict) else getattr(evt, "event_type", "")
+            if not pid:
+                continue
+            if etype in ("cart_saved", "save_cart") and pid not in session_saved_ids:
+                session_saved_ids.append(pid)
+            elif etype in ("simulated_purchase_completed", "order_completed") and pid not in session_order_ids:
+                session_order_ids.append(pid)
+            elif etype in ("product_view", "product_viewed", "search_submitted"):
+                if pid not in session_viewed_ids:
+                    session_viewed_ids.append(pid)
+                view_counts[pid] = view_counts.get(pid, 0) + 1
+
         # Anchor Source 2: Saved cart items (weight 0.85)
-        saved_ids = list(request.saved_cart_product_ids)
-        if not saved_ids:
-            saved_ids = self.repository.get_session_saved_cart_ids(request.session_id)
+        saved_ids = list(request.saved_cart_product_ids) if request.saved_cart_product_ids else session_saved_ids
         for sid in saved_ids:
             if sid not in seen_anchor_ids:
                 anchors.append(
@@ -162,9 +180,7 @@ class DecisionOrchestrator:
                 seen_anchor_ids.add(sid)
 
         # Anchor Source 3: Historical completed FairCart order items (weight 0.75)
-        order_ids = list(request.historical_order_product_ids)
-        if not order_ids:
-            order_ids = self.repository.get_session_historical_order_ids(request.session_id)
+        order_ids = list(request.historical_order_product_ids) if request.historical_order_product_ids else session_order_ids
         for oid in order_ids:
             if oid not in seen_anchor_ids:
                 anchors.append(
@@ -179,17 +195,7 @@ class DecisionOrchestrator:
                 seen_anchor_ids.add(oid)
 
         # Anchor Source 4: Viewed items (weight 0.60)
-        viewed_ids = list(request.viewed_product_ids)
-        if not viewed_ids:
-            viewed_ids = self.repository.get_session_viewed_product_ids(request.session_id)
-
-        view_counts: dict[str, int] = {}
-        for evt in session_events:
-            pid = evt.get("product_id") if isinstance(evt, dict) else getattr(evt, "product_id", "")
-            etype = evt.get("event_type") if isinstance(evt, dict) else getattr(evt, "event_type", "")
-            if pid and etype in ("product_view", "product_viewed"):
-                view_counts[pid] = view_counts.get(pid, 0) + 1
-
+        viewed_ids = list(request.viewed_product_ids) if request.viewed_product_ids else session_viewed_ids
         for vid in viewed_ids:
             if vid not in seen_anchor_ids:
                 v_count = view_counts.get(vid, 1)

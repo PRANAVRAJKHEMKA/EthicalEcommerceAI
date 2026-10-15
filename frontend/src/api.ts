@@ -10,6 +10,8 @@ import {
   MerchantSettings,
   SessionEventCreate,
   SessionEvent,
+  SimulationRequest,
+  SimulationResponse,
 } from './types.ts';
 
 // Configurable API base url supporting environment override or relative URL for unified deployment
@@ -144,4 +146,33 @@ export async function clearSessionEvents(
   }
   return res.json();
 }
+
+export async function runSimulation(req: SimulationRequest): Promise<SimulationResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/simulate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    throw new Error(`Simulation failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchLatestSimulation(): Promise<SimulationResponse | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/simulate/latest`);
+    if (!res.ok) {
+      if (res.status === 404) return null;
+      throw new Error(`Fetch latest simulation failed with status ${res.status}`);
+    }
+    const data = await res.json();
+    return data.results || data;
+  } catch {
+    return null;
+  }
+}
+
 

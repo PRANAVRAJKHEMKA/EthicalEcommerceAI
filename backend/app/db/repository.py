@@ -285,3 +285,58 @@ class CatalogRepository:
         finally:
             conn.close()
 
+    def save_simulation_run(
+        self,
+        run_id: str,
+        timestamp: str,
+        random_seed: int,
+        num_sessions: int,
+        margin_floor: float,
+        discount_cap: float,
+        results_json: str,
+        execution_latency_ms: float,
+    ) -> None:
+        """Persists a 3-policy simulation comparator run to SQLite."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO simulation_runs (
+                    id, timestamp, random_seed, num_sessions, margin_floor, discount_cap, results_json, execution_latency_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """, (
+                run_id, timestamp, random_seed, num_sessions, margin_floor, discount_cap, results_json, execution_latency_ms
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_latest_simulation_run(self) -> dict | None:
+        """Retrieves the most recent simulation run from SQLite."""
+        import json
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, timestamp, random_seed, num_sessions, margin_floor, discount_cap, results_json, execution_latency_ms
+                FROM simulation_runs
+                ORDER BY timestamp DESC
+                LIMIT 1;
+            """)
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "timestamp": row["timestamp"],
+                "random_seed": row["random_seed"],
+                "num_sessions": row["num_sessions"],
+                "margin_floor": row["margin_floor"],
+                "discount_cap": row["discount_cap"],
+                "results": json.loads(row["results_json"]),
+                "execution_latency_ms": row["execution_latency_ms"],
+            }
+        finally:
+            conn.close()
+
+
