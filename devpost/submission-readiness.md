@@ -47,7 +47,7 @@ We audited every file in the project against official Devpost requirements:
 | [`.dockerignore`](../.dockerignore) | **Mandatory** (Security) | Exists; excludes `.local/`, `*.local.md`, `.env*`, `learner-profile*`, and `.git`. | Hardened in Milestone 6C to prevent build context leaks. | **PASS** |
 | [`Dockerfile`](../Dockerfile) | **Recommended** | Exists; multi-stage Docker build (Node 20 builder + Python 3.12 slim runtime). | Verified dynamic `$PORT` binding and healthcheck probe. | **PASS** |
 | [`skills-lock.json`](../skills-lock.json) | **Mandatory** (Skill Pack) | Exists; tracks 6 official challengepost skills with computed sha256 hashes. | Matches installed skills directory structure. | **PASS** |
-| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers. | 131 passing backend unit tests. | **PASS** |
+| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers. | 135 passing backend unit tests (Milestone 6D release checkpoint). | **PASS** |
 | Frontend Source (`frontend/`) | **Mandatory** | 100% complete; React 19, Vite, Tailwind CSS, Lucide icons, responsive modals, CDP verified. | Built cleanly in 8.62s (99.55 kB gzip JS). | **PASS** |
 | `devpost/learner-profile.md` | **Private / Internal** | Exists; 3,821 bytes; contains personal learner notes and prior background. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
 | `.local/demo-credentials.local.md` | **Private / Internal** | Exists; 1,611 bytes; local demo seed log. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |

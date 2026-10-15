@@ -24,8 +24,8 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
 - **Non-bypassable Gross-Margin Floor:** Every discount is evaluated across the entire basket ($\text{Basket Gross Margin} \ge \text{Configured Floor}$).
 - **Immutable Reference Price Ceiling:** Personalization can never increase prices above authoritative catalogue reference prices.
 - **Hybrid Recommendation Pipeline:** 10-stage recommender combining Apriori basket association rules, session interaction history (views, intentional dwell hovers), context filtering, supervised ranking (`HistGradientBoostingClassifier`), and Maximal Marginal Relevance (MMR) diversity reranking.
-- **Dual Explainability:** Generates plain-language customer rationale via Google Gemini (with deterministic sub-5ms offline fallback) while providing merchants with exact mathematical attribution.
-- **Three-Policy Economic Simulator:** Monte Carlo comparator evaluating No Discount vs. Blanket 15% Promotion vs. FairCart AI with Common Random Numbers (CRN).
+- **Dual Explainability:** Generates plain-language customer rationale via Google Gemini 2.5 Flash when `GEMINI_API_KEY` is configured, with an instant sub-5ms deterministic offline fallback when unconfigured or offline. Merchants receive exact mathematical attribution logs.
+- **Three-Policy Economic Simulator:** Monte Carlo comparator evaluating No Discount vs. Blanket 15% Promotion vs. FairCart AI with Common Random Numbers (CRN) across 1,000 synthetic sessions. Designed to validate pipeline mechanics and margin trade-offs; does not claim real-world consumer uplift or live market revenue.
 
 ---
 
@@ -76,7 +76,7 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
 
 ### 1. Clone Repository & Setup Backend
 ```bash
-git clone https://github.com/pranavrajkhemka/EthicalEcommerceAI.git
+git clone https://github.com/PRANAVRAJKHEMKA/EthicalEcommerceAI.git
 cd EthicalEcommerceAI
 
 # Create and activate Python virtual environment
@@ -108,7 +108,7 @@ npm run dev
 
 ### 3. Run Automated Tests
 ```bash
-# Execute the full backend test suite (131 tests)
+# Execute the full backend test suite (135 tests passing at Milestone 6D release checkpoint)
 python -m unittest discover -s backend/tests -p "test_*.py"
 
 # Verify frontend production build
@@ -137,19 +137,24 @@ For judges and evaluators, FairCart AI includes **five distinct synthetic custom
 
 ## 5. Dual Persistence: SQLite vs. Neon PostgreSQL
 
-FairCart AI supports two seamless database persistence modes configured via the `DATABASE_URL` environment variable:
+FairCart AI supports two database persistence runtimes configured via the `DATABASE_URL` environment variable:
 
-- **Mode 1 — SQLite (Default):**  
-  Zero configuration. Uses local `faircart.db`. Automatically seeded on startup with 32 curated products, 980 association rules, 5 demo accounts, and 15 itemized past orders.
-- **Mode 2 — Neon Serverless PostgreSQL (Option B):**  
+- **Mode 1 — SQLite (Default Local Development):**  
+  Zero external configuration. Uses local `faircart.db`. Automatically seeded on startup with 32 curated products, 980 association rules, 5 demo accounts, and 15 itemized past orders. Designed for offline development, local unit tests, and self-contained demonstrations.
+- **Mode 2 — Neon Serverless PostgreSQL (Durable Cloud Persistence):**  
   Configured by setting `DATABASE_URL=postgresql://user:password@ep-xyz.neon.tech/neondb?sslmode=require`.  
-  Enables 100% durable persistence of simulated checkouts, merchant policy slider adjustments, and simulation runs across cloud container cold boots. Automatic fallback to SQLite if PostgreSQL is unreachable.
+  Enables permanent persistence of simulated checkouts, merchant policy slider adjustments, and simulation runs across cloud container cold boots.
+  - **Production Fail-Safe Protection:** When production is configured (`ENVIRONMENT=production` or `allow_fallback=False`), a failed PostgreSQL connection raises a `RuntimeError` halting startup or reports `HTTP 503 Service Unavailable` on `/api/v1/health`. It **never** silently switches to ephemeral SQLite in production, ensuring operators are alerted rather than experiencing silent data loss upon container sleep.
+  - **Credential Masking:** Connection credentials are automatically scrubbed (`postgresql://***:***@host:port/db`) in all system logs and exceptions.
+  - **Permitted Development Fallback:** In non-production development environments where `allow_fallback=True` is explicitly permitted, the engine falls back to local SQLite with a logged warning for offline convenience.
 
 ---
 
 ## 6. Multi-Stage Production Container (`Dockerfile`)
 
-FairCart AI includes a production Docker container sized for zero-cost deployment on **Render**, **Cloud Run**, or **Hugging Face Spaces**:
+FairCart AI includes a multi-stage production Docker container sized for zero-cost deployment on **Render**, **Cloud Run**, or **Hugging Face Spaces**:
+
+- **Hosting & Durability Architecture:** Free-tier container hosts (e.g., Render free web services) feature an ephemeral filesystem that resets on container sleep. Pairing the stateless container with **Neon Serverless PostgreSQL** (permanent free tier, 1 GB storage, scale-to-zero) guarantees 100% durable persistence without requiring paid compute plans or persistent disk add-ons.
 
 ```bash
 # Build the unified container
