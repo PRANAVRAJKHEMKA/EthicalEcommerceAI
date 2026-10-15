@@ -1,6 +1,7 @@
 import unittest
 import os
 import tempfile
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
@@ -79,6 +80,16 @@ class TestFoundationAndHealth(unittest.TestCase):
         self.assertGreaterEqual(data["catalog_items_loaded"], 20)
         self.assertIn("gemini_configured", data)
         self.assertIn("version", data)
+
+    def test_health_endpoint_reports_unhealthy_on_db_failure(self):
+        """Verifies health check endpoint returns 503 and unhealthy status if database query fails."""
+        with patch.object(CatalogRepository, "count_products", side_effect=Exception("Database connection terminated")):
+            response = self.client.get("/api/v1/health")
+            self.assertEqual(response.status_code, 503)
+            data = response.json()
+            self.assertEqual(data["status"], "unhealthy")
+            self.assertEqual(data["catalog_items_loaded"], 0)
+            self.assertIn("unhealthy", data["database"])
 
     def test_root_endpoint(self):
         """Verifies root endpoint returns basic API discovery information."""

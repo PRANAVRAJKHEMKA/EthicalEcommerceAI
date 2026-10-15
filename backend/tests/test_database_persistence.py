@@ -20,6 +20,7 @@ from backend.app.db.database import (
     get_connection,
     init_db,
     is_postgres,
+    mask_db_url,
     PostgresCursorWrapper,
     PostgresConnectionWrapper,
 )
@@ -80,15 +81,32 @@ class TestDatabasePersistence(unittest.TestCase):
         # Keys inspection
         self.assertIn("name", row.keys())
 
-    def test_unreachable_postgres_url_falls_back_gracefully_to_sqlite(self):
-        """Verifies database layer falls back to SQLite without crashing when PostgreSQL is unreachable."""
+    def test_mask_db_url_redacts_credentials(self):
+        """Verifies mask_db_url strips user and password completely from connection strings."""
+        raw_url = "postgresql://my_user:secret_pass_123@ep-cool-456.aws.neon.tech/faircart_db?sslmode=require"
+        masked = mask_db_url(raw_url)
+        self.assertNotIn("my_user", masked)
+        self.assertNotIn("secret_pass_123", masked)
+        self.assertIn("postgresql://***:***@ep-cool-456.aws.neon.tech/faircart_db", masked)
+
+    def test_unreachable_postgres_in_production_raises_startup_error(self):
+        """Verifies that when production/strict mode is active, PostgreSQL connection failure raises RuntimeError instead of falling back to SQLite."""
+        unreachable_url = "postgresql://dummy_user:dummy_pass@127.0.0.1:59999/nonexistent?connect_timeout=1"
+        with self.assertRaises(RuntimeError) as ctx:
+            get_connection(database_url=unreachable_url, allow_fallback=False)
+        self.assertIn("Silent SQLite fallback is prohibited", str(ctx.exception))
+        # Ensure credentials were not leaked into the exception message
+        self.assertNotIn("dummy_pass", str(ctx.exception))
+        self.assertIn("***:***", str(ctx.exception))
+
+    def test_unreachable_postgres_url_falls_back_in_dev_when_permitted(self):
+        """Verifies database layer falls back to SQLite with warning when dev fallback is explicitly permitted."""
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             temp_db = f.name
         try:
-            # Provide an unreachable dummy Postgres URL with fast 1s timeout
+            # Provide an unreachable dummy Postgres URL with fast 1s timeout and allow_fallback=True
             unreachable_url = "postgresql://dummy_user:dummy_pass@127.0.0.1:59999/nonexistent?connect_timeout=1"
-            conn = get_connection(db_path=temp_db, database_url=unreachable_url)
-            # Must return a valid connection (fallback SQLite connection)
+            conn = get_connection(db_path=temp_db, database_url=unreachable_url, allow_fallback=True)
             self.assertIsNotNone(conn)
             cur = conn.cursor()
             cur.execute("SELECT 1;")
@@ -179,6 +197,42 @@ class TestDatabasePersistence(unittest.TestCase):
                     os.unlink(temp_db)
                 except OSError:
                     pass
+
+    def test_postgres_wrapper_order_and_settings_persistence(self):
+        """Verifies PostgresConnectionWrapper and PostgresCursorWrapper correctly adapt and handle orders and merchant settings."""
+        mock_raw_cursor = MagicMock()
+        mock_raw_conn = MagicMock()
+        mock_raw_conn.cursor.return_value = mock_raw_cursor
+
+        wrapper = PostgresConnectionWrapper(mock_raw_conn)
+        cur = wrapper.cursor()
+
+        # 1. Updating merchant settings translates to ON CONFLICT UPDATE
+        cur.execute(
+            "INSERT OR REPLACE INTO merchant_settings (key, value, updated_at) VALUES (?, ?, datetime('now'));",
+            ["margin_floor", 0.25],
+        )
+        called_sql = mock_raw_cursor.execute.call_args[0][0]
+        called_params = mock_raw_cursor.execute.call_args[0][1]
+        self.assertIn("ON CONFLICT (key) DO UPDATE", called_sql)
+        self.assertEqual(called_params, ["margin_floor", 0.25])
+
+        # 2. Creating order translates ? to %s
+        cur.execute(
+            "INSERT INTO orders (id, user_id, created_at, status, provenance, currency, total_cents, savings_cents, items_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            ["ord-pg-01", "usr-pg-01", "2026-10-15T23:00:00Z", "completed_simulated", "simulated_checkout", "USD", 5000, 500, "[]"],
+        )
+        called_order_sql = mock_raw_cursor.execute.call_args[0][0]
+        self.assertNotIn("?", called_order_sql)
+        self.assertIn("%s, %s, %s", called_order_sql)
+
+        # 3. fetchone returns DictRowCompat supporting key and index access
+        mock_raw_cursor.fetchone.return_value = {"id": "ord-pg-01", "total_cents": 5000}
+        row = cur.fetchone()
+        self.assertIsInstance(row, DictRowCompat)
+        self.assertEqual(row["id"], "ord-pg-01")
+        self.assertEqual(row[0], "ord-pg-01")
 
 
 if __name__ == "__main__":

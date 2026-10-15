@@ -1077,5 +1077,41 @@ OK (131/131 tests passing, 0 failures, 0 errors)
 - test_hybrid_ml_recommender.py (6 tests): HistGBM ranking, MMR diversity reranking.
 ```
 
+---
+
+## 10. Milestone 6D: Final Release Verification, Database Durability Safeguards & Devpost Submission Preparation
+
+> **Release Checkpoint:** Milestone 6D Release Candidate (commit `fa7e73b` + durability hardening)  
+> **Verification Date & Time:** October 15, 2026, 23:35 IST  
+> **Automated Backend Tests:** **135 / 135 tests passing** (0 failures, 0 errors in 35.417s)  
+> **Frontend Production Build:** Built cleanly in 7.38s (0 type errors, 99.55 kB gzip JS, 6.65 kB gzip CSS)  
+> **Git Secret Hygiene:** Verified zero committed API keys (`AIzaSy...`), zero passwords, zero `.db` files across full git history.
+
+### 10.1 Resolution of Test Execution Status & Fresh Baseline
+- In the initial turn, the test suite was started as an asynchronous background task due to runtime exceeding the immediate response window, generating a transient "awaiting test completion" notification.
+- Upon completion, the task output was delivered directly: `Ran 131 tests in 91.700s — OK`.
+- For Milestone 6D, we executed a fresh, authoritative run of the full test suite (`python -m unittest discover -s backend/tests -p "test_*.py"`):
+  ```text
+  Ran 135 tests in 35.417s — OK (0 failures, 0 errors, exit code: 0)
+  ```
+- The test count expanded from 131 to 135 to explicitly cover:
+  1. Safe credential masking (`mask_db_url`) preventing password leakage in logs.
+  2. Production-mode strict startup error on PostgreSQL failure (no silent ephemeral SQLite fallback).
+  3. Dynamic PostgreSQL / SQLite health probe reporting HTTP 503 on database disconnect.
+  4. PostgreSQL wrapper query and order translation with row compatibility.
+
+### 10.2 Production Database Durability & Safe Error Handling
+- **The Problem:** In containerized serverless hosting (e.g., Render Free Web Service), the container filesystem is ephemeral and wiped upon every 15-minute idle spin-down. If a production deployment configured for PostgreSQL silently falls back to local SQLite on connection error, all custom merchant settings and simulated orders would be lost on the next container sleep.
+- **The Solution:**
+  1. **Strict Production Failure:** In production (`ENVIRONMENT=production` or `allow_fallback=False`), a failed PostgreSQL connection raises a clear `RuntimeError` halting startup immediately. This signals an unhealthy deployment to the platform rather than quietly storing state in ephemeral storage.
+  2. **Safe Credential Masking:** Implemented `mask_db_url()` to completely scrub user credentials (e.g. `postgresql://***:***@ep-xyz.aws.neon.tech/neondb`) from logs, console messages, and exception traces.
+  3. **Dynamic Health Probe:** `GET /api/v1/health` verifies database connectivity dynamically: reports `database="postgresql"` when active, and sets HTTP 503 Service Unavailable with `status="unhealthy"` if database queries fail.
+  4. **Adapter Unit Tests vs Integration Tests:** 11 unit tests in `test_database_persistence.py` verify ANSI SQL dialect translation, row indexing, restart persistence, and failure prevention. Integration testing against a live remote database requires configuring `DATABASE_URL` with a valid Neon Serverless PostgreSQL connection string.
+
+### 10.3 Forensic Skill Pack Adherence & Devpost Submission Status
+- Forensic repository inspection confirmed `skills-lock.json` has tracked all 6 official skills from `challengepost/learn-ai-basics` since Milestone 1 (commit `957c0fe`).
+- All 5 planning and visualization artifacts (`scope.md`, `prd.md`, `spec.md`, `checklist.md`, `app-map.html`) exist in `devpost/` with approved frontmatter and match the implemented codebase.
+
+
 
 

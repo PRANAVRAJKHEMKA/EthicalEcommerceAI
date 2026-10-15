@@ -86,13 +86,19 @@ class OrderEntity:
 class CatalogRepository:
     """Repository handling all database queries for the product catalog and merchant settings."""
 
-    def __init__(self, db_path: str | None = None, database_url: str | None = None):
+    def __init__(
+        self,
+        db_path: str | None = None,
+        database_url: str | None = None,
+        allow_fallback: bool | None = None,
+    ):
         self.db_path = db_path
         self.database_url = database_url
+        self.allow_fallback = allow_fallback
 
     def _get_connection(self):
         """Creates an active database connection using the configured path or database URL."""
-        return get_connection(self.db_path, self.database_url)
+        return get_connection(self.db_path, self.database_url, allow_fallback=self.allow_fallback)
 
     def _row_to_entity(self, row: sqlite3.Row) -> ProductEntity:
         """Converts an SQLite row into an immutable ProductEntity with integer cents."""

@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from backend.app.config import settings, BASE_DIR
-from backend.app.db.database import init_db
+from backend.app.db.database import init_db, is_postgres
 from backend.app.db.repository import CatalogRepository
 from backend.app.engine import DecisionOrchestrator
 from backend.app.engine.explanation import GeminiExplanationService
@@ -103,18 +103,28 @@ def on_startup():
         print(f"Startup catalog/demo account verification note: {e}")
 
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["System Health"])
-def get_health() -> HealthResponse:
+def get_health(response: Response) -> HealthResponse:
     """Operational health check endpoint verifying database connectivity and catalog item count."""
-    repo = CatalogRepository()
-    count = repo.count_products()
-    
-    return HealthResponse(
-        status="healthy",
-        catalog_items_loaded=count,
-        database="sqlite",
-        gemini_configured=bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip()),
-        version=settings.APP_VERSION,
-    )
+    db_type = "postgresql" if is_postgres(settings.DATABASE_URL) else "sqlite"
+    try:
+        repo = CatalogRepository()
+        count = repo.count_products()
+        return HealthResponse(
+            status="healthy",
+            catalog_items_loaded=count,
+            database=db_type,
+            gemini_configured=bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip()),
+            version=settings.APP_VERSION,
+        )
+    except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return HealthResponse(
+            status="unhealthy",
+            catalog_items_loaded=0,
+            database=f"{db_type} (unhealthy: {str(e)})",
+            gemini_configured=bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip()),
+            version=settings.APP_VERSION,
+        )
 
 @app.get("/api/v1/catalog", response_model=list[Product], tags=["Catalog"])
 def get_catalog() -> list[Product]:

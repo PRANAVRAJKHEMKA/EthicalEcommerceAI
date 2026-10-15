@@ -143,9 +143,12 @@ Because free cloud container tiers spin down after 15 minutes of inactivity:
 
 | Validation Check | Tool / Mechanism | Result | Evidence Timestamp |
 | :--- | :--- | :--- | :--- |
-| Backend Automated Tests | Python `unittest` | **118 / 118 tests passing** (0 failures, 0 errors in 80.8s) | 2026-10-15 |
-| Frontend Production Build | Vite 6.4.4 + TypeScript 5.7 | **Built cleanly in 8.98s** (0 type errors, gzip: 99.3 kB JS, 6.6 kB CSS) | 2026-10-15 |
-| Demo Authentication Security | `test_demo_auth.py` | 5 demo personas, Argon2id verification, 401 on bad password, 429 on 5 failed attempts, 403 on admin escalation | 2026-10-15 |
+| Backend Automated Tests | Python `unittest` | **135 / 135 tests passing** (0 failures, 0 errors in 35.4s) | 2026-10-15 |
+| Frontend Production Build | Vite 6.4.4 + TypeScript 5.7 | **Built cleanly in 7.38s** (0 type errors, gzip: 99.55 kB JS, 6.65 kB CSS) | 2026-10-15 |
+| Database Durability & Dialect | `test_database_persistence.py` | 11 tests: ANSI SQL translation, row indexing, restart persistence, masked connection string in logs | 2026-10-15 |
+| Strict Production DB Failure | `test_database_persistence.py` | Unreachable PostgreSQL in production halts startup with `RuntimeError`; zero silent ephemeral fallback | 2026-10-15 |
+| Dynamic Operational Health | `test_foundation.py` | `GET /api/v1/health` reports `database="postgresql"` when configured; returns 503 on DB disconnect | 2026-10-15 |
+| Demo Authentication Security | `test_demo_auth.py` | 12 tests: 5 demo personas, Argon2id verification, 401 on bad password, 429 on rate limit, 403 on admin escalation | 2026-10-15 |
 | Account Order Isolation | `test_account_order_history.py` | 15 synthetic orders, cross-account 404, simulated checkout persistence under authenticated account | 2026-10-15 |
 | Personalized Order Anchors | `test_personalized_recommendations.py` | Gamer vs Creator recommendations diverge on empty basket ($O_{gamer} \neq O_{creator}$), zero leakage to guest | 2026-10-15 |
 | Pointer Dwell Reliability | `test_hover_reliability.py` & CDP | 700ms dwell contract, touch filtering, internal child boundary protection, stale response sequence guard | 2026-10-15 |

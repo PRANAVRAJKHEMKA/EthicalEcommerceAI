@@ -141,15 +141,37 @@ class PostgresConnectionWrapper:
             self.commit()
 
 
-def get_connection(db_path: str | None = None, database_url: str | None = None) -> Any:
+def mask_db_url(url: str | None) -> str:
+    """Masks credentials in a database URL for safe logging and error reporting (e.g. postgresql://***:***@host:port/db)."""
+    if not url:
+        return ""
+    return re.sub(r"://([^:@\s]+)(?::([^@\s]+))?@", r"://***:***@", url)
+
+
+def get_connection(
+    db_path: str | None = None,
+    database_url: str | None = None,
+    allow_fallback: bool | None = None,
+) -> Any:
     """Creates and returns an active database connection.
     
     If database_url (or settings.DATABASE_URL) is a valid PostgreSQL URI, connects via
-    psycopg to PostgreSQL (e.g. Neon Serverless Postgres). Otherwise, returns a standard
-    SQLite connection with Row dictionary mapping.
+    psycopg to PostgreSQL (e.g. Neon Serverless Postgres).
+    
+    Persistence Safeguards:
+    - In production (settings.ENVIRONMENT in ('production', 'prod')), silent fallback to SQLite
+      is strictly forbidden to prevent silent ephemeral data loss on container restarts.
+    - If allow_fallback is False, a connection failure will immediately raise a RuntimeError.
+    - In development (settings.ENVIRONMENT != 'production') when allow_fallback is True (the default),
+      it falls back to local SQLite with a warning for offline developer workflows.
+    - Credentials in target_url are masked before any logging or exception messages.
     """
     target_url = database_url if database_url is not None else settings.DATABASE_URL
+    is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
+    fallback_permitted = False if is_prod else (allow_fallback if allow_fallback is not None else True)
+
     if is_postgres(target_url):
+        masked_url = mask_db_url(target_url)
         try:
             import psycopg
             from psycopg.rows import dict_row
@@ -161,9 +183,19 @@ def get_connection(db_path: str | None = None, database_url: str | None = None) 
             conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=2)
             return PostgresConnectionWrapper(conn)
         except Exception as e:
+            if not fallback_permitted:
+                logger.error(
+                    f"CRITICAL: Failed to connect to PostgreSQL at '{masked_url}': {e}. "
+                    f"Operation halted to prevent silent ephemeral SQLite fallback."
+                )
+                raise RuntimeError(
+                    f"PostgreSQL connection failed to '{masked_url}': {e}. "
+                    f"Silent SQLite fallback is prohibited in production or strict mode to prevent data loss."
+                ) from e
+
             logger.warning(
-                f"PostgreSQL connection to '{target_url[:25]}...' failed: {e}. "
-                f"Falling back gracefully to local SQLite database."
+                f"PostgreSQL connection to '{masked_url}' failed: {e}. "
+                f"Development fallback permitted: using local SQLite database."
             )
 
     # SQLite fallback / default
@@ -174,13 +206,17 @@ def get_connection(db_path: str | None = None, database_url: str | None = None) 
     return conn
 
 
-def init_db(db_path: str | None = None, database_url: str | None = None) -> None:
+def init_db(
+    db_path: str | None = None,
+    database_url: str | None = None,
+    allow_fallback: bool | None = None,
+) -> None:
     """Initializes the database schema if tables do not exist and applies migrations.
     
     Compatible with both SQLite and PostgreSQL.
     """
     target_url = database_url if database_url is not None else settings.DATABASE_URL
-    conn = get_connection(db_path, target_url)
+    conn = get_connection(db_path, target_url, allow_fallback=allow_fallback)
     try:
         cursor = conn.cursor()
 

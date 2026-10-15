@@ -153,9 +153,11 @@ def attach_session_cookie(response: Response, session_token: str, max_age_days: 
 
 def clear_session_cookie(response: Response) -> None:
     """Clears the session cookie."""
+    is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
     response.delete_cookie(
         key="faircart_session",
         httponly=True,
         samesite="lax",
+        secure=is_prod,
         path="/",
     )

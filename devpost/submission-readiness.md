@@ -1,12 +1,12 @@
-# FairCart AI — Devpost Submission Readiness Audit (Milestone 6C)
+# FairCart AI — Devpost Submission Readiness Audit (Milestone 6D)
 
-> **Document Status:** Authoritative Submission Readiness Audit  
+> **Document Status:** Authoritative Submission Readiness Audit & Final Release Verification  
 > **Audited By:** Antigravity AI Pair Programmer & Code Quality System  
 > **Target Competition:** [Devpost Build With AI: Basics](https://learn-ai-basics.devpost.com/rules)  
 > **Skill Pack Source:** [challengepost/learn-ai-basics](https://github.com/challengepost/learn-ai-basics)  
-> **Audit Date & Local Time:** October 15, 2026, 23:05 IST  
-> **Audit Baseline Git Commit:** `1e1f214` + Milestone 6C hardening  
-> **Test Baseline:** **131 / 131 unit tests passing**, **0 failures, 0 errors**  
+> **Audit Date & Local Time:** October 15, 2026, 23:35 IST  
+> **Audit Baseline Git Commit:** `fa7e73b` + Milestone 6D durability hardening  
+> **Test Baseline:** **135 / 135 unit tests passing**, **0 failures, 0 errors** in 35.417s  
 
 ---
 
@@ -90,52 +90,74 @@ To ensure absolute integrity and compliance with hackathon evaluation standards:
 
 ---
 
-## 5. Actionable Devpost Submission Checklist
+## 5. Comprehensive 10-Item Devpost Deliverables Table
 
-This checklist separates tasks automated by the assistant from tasks the learner must personally complete:
+In accordance with official Devpost rules and the Learn Skill Pack specification, every required competition asset is itemized with its exact repository path or target URL and audit status:
 
-### A. Repository & Code Readiness (Automated & Verified by Agent)
-- [x] Working backend application with 131 passing automated tests.
-- [x] Working frontend application with successful production build (gzip: 99.55 kB JS).
-- [x] Multi-stage production `Dockerfile` with healthcheck probe.
-- [x] Dual-database persistence engine supporting SQLite and Neon PostgreSQL.
-- [x] Permissive open-source `LICENSE` (MIT) in repository root.
-- [x] Comprehensive `README.md` with architecture, local setup, and evaluation notes.
-- [x] Hardened `.gitignore` and `.dockerignore` excluding all secrets, databases, and learner profiles.
-- [x] Planning documents (`scope.md`, `prd.md`, `spec.md`, `checklist.md`) in `devpost/` with approved frontmatter.
-- [x] Interactive `app-map.html` topology visualization.
-- [x] Zero exposed secrets in Git history or API responses.
+| # | Competition Deliverable | Exact Path or Target URL | Current Verification Evidence | Audit Status | Responsibility |
+| :-: | :--- | :--- | :--- | :-: | :--- |
+| **1** | **Public Git Repository** | `https://github.com/<user>/EthicalEcommerceAI` | Local Git repository clean at checkpoint `fa7e73b`. Remote origin not yet linked to avoid unconfirmed push. | **NEEDS REVIEW** | **Learner Action** (Link remote & push) |
+| **2** | **Required Planning Documents** | [`devpost/scope.md`](scope.md)<br>[`devpost/prd.md`](prd.md)<br>[`devpost/spec.md`](spec.md)<br>[`devpost/checklist.md`](checklist.md)<br>[`devpost/app-map.html`](app-map.html) | All 5 files exist with approved YAML frontmatter (`status: approved`). Zero placeholders. 100% consistent with implementation. | **PASS** | Automated / Verified |
+| **3** | **Open-Source LICENSE** | [`LICENSE`](../LICENSE) | Standard permissive MIT License with 2026 copyright attribution. Required for public open-source entry. | **PASS** | Automated / Verified |
+| **4** | **README & Setup Guide** | [`README.md`](../README.md) | Comprehensive markdown: overview, local setup, demo persona guide, dual-persistence docs, Docker specs, track alignment. | **PASS** | Automated / Verified |
+| **5** | **Public Deployment & Tested URL** | `https://<app-name>.onrender.com`<br>*(or GitHub repo in "Try it out")* | Multi-stage `Dockerfile` verified; dynamic `$PORT` binding; dual SQLite/Postgres persistence layer ready. Zero-cost deployment verified. Public URL not claimed until live deployment is authorized by user. | **NEEDS REVIEW** | **Learner Action** (Optional deploy or repo URL) |
+| **6** | **Public Demo Video (<3 min)** | YouTube / Vimeo link | Detailed 2-minute walkthrough outline provided below. In strict adherence to competition rules, video must be recorded by the human learner. | **NEEDS REVIEW** | **Learner Action** (Record & upload video) |
+| **7** | **Project Description & Story** | Devpost Submission Form Fields | Comprehensive factual summary and technical outline prepared in Section 5.2. Personal responses must be submitted in learner's own words. | **NEEDS REVIEW** | **Learner Action** (Fill Devpost text fields) |
+| **8** | **Skill Pack Usage Explanation** | Devpost Required Text Field | `skills-lock.json` tracks all 6 skills from `challengepost/learn-ai-basics` (committed at `957c0fe`). 6-stage workflow documented. | **PASS** | Automated / Verified |
+| **9** | **Age-of-Majority Confirmation** | Devpost Required Checkbox | Mandatory legal eligibility confirmation checkbox on Devpost form. Must be confirmed personally by learner. | **NEEDS REVIEW** | **Learner Action** (Check confirmation box) |
+| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **135 / 135 unit tests pass** in 35.4s (0 failures, 0 errors). Frontend builds cleanly in 7.38s. Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
 
-### B. Personal Submitter Actions (Must Be Completed Personally by Learner)
-- [ ] **Public Git Hosting:** Push the local repository to a public GitHub repository (e.g. `github.com/pranavrajkhemka/EthicalEcommerceAI`).
-- [ ] **Public Demonstration URL:** Provide the deployed URL (or GitHub repository URL) in Devpost's **Try it out** submission field.
-- [ ] **Demonstration Video:** Record a genuine video demonstration under three minutes:
-  * Recommended outline (2 min):
-    1. Show the problem: merchant margin destruction and consumer manipulation (0:00–0:20).
-    2. Shopper journey on Storefront: add item, inspect complementary recommendation, view transparent price breakdown and Gemini explanation, simulated checkout (0:20–1:00).
-    3. Demonstrate guardrail: adjust margin floor slider on Merchant Console, observe discount revocation (1:00–1:30).
-    4. Run 3-policy simulation comparator: compare contribution profit vs. blanket discounting (1:30–2:00).
-  * Upload publicly to **YouTube** or **Vimeo** (unlisted or public).
-- [ ] **Devpost Text Fields:** In the Devpost submission editor, write your project description in your own words answering:
-  * *Inspiration:* Why ethical commerce and margin preservation matter.
-  * *What it does:* The core loop and dual explainability.
-  * *How you built it:* FastAPI, React 19, Gemini, and the Learn Skill Pack workflow.
-  * *Challenges:* Windows environment tuning, pydantic-core binary pinning, integer-cent arithmetic.
-  * *Accomplishments:* 131 passing tests, sub-25ms local decisions, dual-driver persistence.
-  * *What you learned:* Flipped interaction, plan-first development, and economic guardrail modeling.
-- [ ] **Skill Pack Checkbox & Field:** Confirm that the official Learn Skill Pack was used, and describe the 6-stage workflow (`1-start` to `6-ship`).
-- [ ] **Age of Majority Checkbox:** Confirm eligibility in accordance with official competition rules.
-- [ ] **Final Review:** Perform final visual review on Devpost and submit before the competition deadline.
+---
+
+## 5.1 Submitter Action Guide (Separation of Responsibilities)
+
+### A. Completed & Verified by Agent (Zero Further Coding Needed)
+- [x] **Code Complete:** 135 automated backend tests pass; frontend TypeScript compiles cleanly.
+- [x] **Production Container:** Multi-stage `Dockerfile` with health probe and dynamic `$PORT`.
+- [x] **Database Durability:** Dual SQLite / Neon PostgreSQL support with strict production startup failure (no silent fallback).
+- [x] **Credential Masking:** Connection strings scrubbed in logs (`mask_db_url`).
+- [x] **Security Hardening:** Redacted demo persona metadata, whitelisted rate-limited demo login, isolated order history, zero merchant admin escalation.
+- [x] **Planning Artifacts:** `scope.md`, `prd.md`, `spec.md`, `checklist.md`, `app-map.html`, `README.md`, `LICENSE` verified.
+
+### B. Mandatory Personal Actions for the Submitter (Pranav)
+1. **Push to Public GitHub Repository:**
+   ```powershell
+   git remote add origin https://github.com/<your-username>/EthicalEcommerceAI.git
+   git branch -M main
+   git push -u origin main
+   ```
+2. **Submit Public URL in Devpost:**
+   - Enter your public GitHub repo URL (or live Render URL if deployed) into Devpost's **"Try it out"** field.
+3. **Record Demo Video (<3 Minutes):**
+   - Follow this concise 2-minute demonstration flow:
+     * **0:00–0:25:** *The Problem:* Traditional e-commerce destroys margins with blanket discounts and manipulates shoppers with artificial countdowns and deceptive reference prices.
+     * **0:25–1:00:** *Shopper Experience:* Add an item on the Storefront. Observe complementary recommendation with transparent math, view the Gemini explanation, and complete simulated checkout.
+     * **1:00–1:30:** *Merchant Margin Floor:* Switch to Merchant Console. Adjust the Gross Margin Floor slider upward from 20% to 35%. Return to cart and observe that discount is automatically revoked to preserve merchant solvency.
+     * **1:30–2:00:** *3-Policy Simulation:* Run the 1,000-session Monte Carlo simulator comparing No Discount vs. Blanket 15% vs. FairCart AI, demonstrating higher contribution profit with controlled promotional expense.
+   - Upload publicly to YouTube or Vimeo.
+4. **Fill Devpost Submission Form in Your Own Words:**
+   - *Inspiration:* Why protecting merchant margins while avoiding deceptive dark patterns matters to you.
+   - *What it does:* Real-time constrained optimization bounding recommendations by non-bypassable margin floors and price ceilings.
+   - *How you built it:* FastAPI, React 19, Gemini 2.5 Flash, Neon PostgreSQL/SQLite, guided by the Learn Skill Pack.
+   - *Challenges:* Integer-cent arithmetic across bundles, Windows Python environment tuning, sub-25ms synchronous local decisions.
+   - *Accomplishments:* 135 passing tests, full 3-policy simulation comparator, Argon2id multi-persona demo auth.
+   - *What you learned:* Flipped interaction, planning before coding (`scope` $\to$ `prd` $\to$ `spec`), and mathematical invariant preservation.
+5. **Skill Pack Usage Field:**
+   - In the required question on Devpost, describe how you ran the 6 stages (`1-start` to `6-ship`) with the Learn Skill Pack (`challengepost/learn-ai-basics`).
+6. **Age of Majority Checkbox:**
+   - Check the required eligibility confirmation on the Devpost submission modal.
+7. **Submit Project:**
+   - Click **Save & Submit** before the deadline (October 26, 2026, 5:00 PM ET).
 
 ---
 
 ## 6. Audit Conclusion & Compliance Verdict
 
-| Criterion | Evaluation Result | Verdict |
+| Evaluation Category | Audit Finding | Verdict |
 | :--- | :--- | :--- |
-| **Skill Pack Adherence** | All 6 skills installed, locked, and documented with approved frontmatter | **PASS** |
+| **Skill Pack Adherence** | All 6 skills installed, locked in `skills-lock.json`, and documented with approved frontmatter | **PASS** |
 | **Planning Document Integrity** | `scope.md`, `prd.md`, `spec.md` completely match codebase architecture | **PASS** |
-| **Secret Hygiene** | Zero credentials in Git history; passwords redacted from public APIs | **PASS** |
-| **Open Source Licensing** | MIT License file verified in root | **PASS** |
-| **Code Verification** | 131 unit tests pass; frontend builds with 0 type errors | **PASS** |
-| **Overall Submission Readiness** | Ready for public repository push and demo video recording | **READY FOR REVIEW** |
+| **Secret Hygiene** | Zero credentials in Git history; passwords redacted from public APIs; masked DB logs | **PASS** |
+| **Open Source Licensing** | MIT License file verified in repository root | **PASS** |
+| **Code Verification** | 135 unit tests pass; frontend builds with 0 type errors | **PASS** |
+| **Overall Submission Readiness** | Codebase and documentation 100% ready; submitter actions identified | **READY FOR REVIEW** |
