@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FairCart AI — Architecture App Map & Code Tour</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --accent: #10b981;
+      --warning: #f59e0b;
+      --code-bg: #090d16;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+    h1 { font-size: 2.25rem; font-weight: 800; color: #fff; margin-bottom: 0.5rem; letter-spacing: -0.025em; }
+    h1 span { color: var(--primary-light); }
+    .badge-bar {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(99, 102, 241, 0.15);
+      color: var(--primary-light);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+    .badge-success {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--primary); }
+    .card h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .card-full { grid-column: 1 / -1; }
+    ul { list-style: none; }
+    li {
+      margin-bottom: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    li strong { color: var(--text); font-weight: 600; }
+    .code-tree {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: "Fira Code", monospace, Consolas, sans-serif;
+      font-size: 0.8rem;
+      overflow-x: auto;
+      color: #e2e8f0;
+      line-height: 1.7;
+    }
+    .dir { color: #38bdf8; font-weight: bold; }
+    .file { color: #f1f5f9; }
+    .comment { color: #64748b; font-style: italic; }
+    .metric-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+      font-size: 0.825rem;
+    }
+    .metric-table th, .metric-table td {
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .metric-table th { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+    .flow-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+    .step-content { flex: 1; }
+    .step-content h3 { font-size: 0.95rem; font-weight: 600; color: #fff; margin-bottom: 0.2rem; }
+    .step-content p { font-size: 0.825rem; color: var(--text-muted); }
+    footer {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--card-border);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>FairCart <span>AI</span> — App Map & Architecture Tour</h1>
+      <p style="color: var(--text-muted); font-size: 1.05rem;">Explainable, Margin-Preserving E-Commerce Decision Engine</p>
+      <div class="badge-bar">
+        <span class="badge badge-success">✓ 101 / 101 Tests Passing</span>
+        <span class="badge">Vite + React 19 SPA</span>
+        <span class="badge">FastAPI & Python 3.12</span>
+        <span class="badge">Gemini 2.5 Flash + Deterministic Fallback</span>
+        <span class="badge badge-success">Zero Cloud Hosting Cost</span>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Section 1: The Core Loop -->
+      <div class="card card-full">
+        <h2>🔄 End-to-End Decision Request Lifecycle</h2>
+        <div class="flow-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h3>Shopper Intent & Interaction Telemetry</h3>
+            <p>Shopper browses 32 catalog items or sets explicit intent (e.g., "Productivity"). Intentional pointer dwell (&ge;900ms) or detail modal views emit privacy-preserving anonymous events to SQLite (`session_events`).</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h3>Engine A: Hybrid Candidate Generation & Ranking</h3>
+            <p>Evaluates multi-item cart anchors or cold-start fallback. Computes 14-feature candidate representations, Apriori co-occurrence lift (980 rules), supervised HistGradientBoosting probabilities, and MMR diversity reranking (&lambda;=0.75).</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h3>Engine B: Constrained Economic Margin Optimization</h3>
+            <p>Calculates exact integer-cent line-item margin against active merchant settings (`margin_floor` &ge; 15%, `discount_cap` &le; 20%). Recommends bundle discounts if safe; falls back gracefully to "Standard price · No discount applied" if margin breached.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h3>Engine C: Dual-Mode Customer-Facing Explanation</h3>
+            <p>Google Gemini 2.5 Flash explains why the bundle was recommended using physical product attributes. Enforces 3.5s timeout, response cache, and sub-5ms deterministic offline fallback with immutable financial prices.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Repository File Structure -->
+      <div class="card card-full">
+        <h2>📂 Repository Code Map</h2>
+        <div class="code-tree">
+<span class="dir">d:\EthicalEcommerceAI\</span>
+├── <span class="file">Dockerfile</span>                 <span class="comment"># Multi-stage production container (Node 20 builder + Python 3.12 slim runtime)</span>
+├── <span class="file">.dockerignore</span>              <span class="comment"># Excludes node_modules, .venv, git, and local databases from build context</span>
+├── <span class="file">.env.example</span>               <span class="comment"># Complete environment configuration template with zero exposed secrets</span>
+│
+├── <span class="dir">backend/</span>
+│   ├── <span class="dir">app/</span>
+│   │   ├── <span class="file">main.py</span>            <span class="comment"># FastAPI application, SPA routing, IP rate limiting, startup auto-seeder</span>
+│   │   ├── <span class="file">config.py</span>          <span class="comment"># Pydantic v2 application settings (CORS, ADMIN_TOKEN, GEMINI_API_KEY)</span>
+│   │   ├── <span class="file">schemas.py</span>         <span class="comment"># Pydantic models for catalog, decisions, simulation, and settings</span>
+│   │   ├── <span class="dir">db/</span>
+│   │   │   ├── <span class="file">database.py</span>    <span class="comment"># SQLite connection pool with WAL mode and foreign key pragmas</span>
+│   │   │   └── <span class="file">repository.py</span>  <span class="comment"># Repository layer for products, settings, rules, and session telemetry</span>
+│   │   └── <span class="dir">engine/</span>
+│   │       ├── <span class="file">recommender.py</span> <span class="comment"># Engine A: Hybrid scoring, frequency decay, MMR diversity reranking</span>
+│   │       ├── <span class="file">optimizer.py</span>   <span class="comment"># Engine B: Margin floor enforcement and incentive cap optimizer</span>
+│   │       ├── <span class="file">orchestrator.py</span><span class="comment"># Engine C: Decision API, quote calculation, and fallback controller</span>
+│   │       ├── <span class="file">explanation.py</span> <span class="comment"># Gemini 2.5 Flash integration with 3.5s timeout and offline fallback</span>
+│   │       ├── <span class="file">associations.py</span><span class="comment"># Apriori basket association mining with Laplace-smoothed confidence</span>
+│   │       ├── <span class="file">ml_ranker.py</span>   <span class="comment"># HistGradientBoostingClassifier ranker with 14 candidate features</span>
+│   │       └── <span class="file">simulator.py</span>   <span class="comment"># 3-policy Monte Carlo comparator (1,000 paired CRN sessions, 9 archetypes)</span>
+│   │
+│   ├── <span class="dir">scripts/</span>
+│   │   └── <span class="file">seed_catalog.py</span>   <span class="comment"># Idempotent deterministic seeding script for 32 items and 980 association rules</span>
+│   │
+│   └── <span class="dir">tests/</span>                 <span class="comment"># 101 automated unit tests across 10 test modules (100% pass rate)</span>
+│       ├── <span class="file">test_recommender.py</span>
+│       ├── <span class="file">test_optimizer.py</span>
+│       ├── <span class="file">test_orchestrator.py</span>
+│       ├── <span class="file">test_simulation_engine.py</span>
+│       └── <span class="file">test_frequency_aware_signals.py</span>
+│
+├── <span class="dir">frontend/</span>
+│   ├── <span class="dir">src/</span>
+│   │   ├── <span class="file">App.tsx</span>            <span class="comment"># Application root, view switcher (Storefront / Merchant), cart persistence</span>
+│   │   ├── <span class="file">api.ts</span>             <span class="comment"># Strongly-typed HTTP client with admin token authorization header support</span>
+│   │   ├── <span class="dir">components/</span>
+│   │   │   ├── <span class="file">ProductCard.tsx</span>       <span class="comment"># Product card with 900ms pointer dwell accumulator and episode isolation</span>
+│   │   │   ├── <span class="file">ProductDetailModal.tsx</span> <span class="comment"># Deliberate inspection modal dialog emitting authentic product_view</span>
+│   │   │   ├── <span class="file">CartDrawer.tsx</span>         <span class="comment"># Sliding drawer with live subtotal, line totals, and recommendation cards</span>
+│   │   │   ├── <span class="file">RecommendationCard.tsx</span> <span class="comment"># Transparent offer card displaying Gemini explanation and discount</span>
+│   │   │   ├── <span class="file">TransparencyModal.tsx</span>  <span class="comment"># "How Offers Work" disclosure explaining margin floors and reference prices</span>
+│   │   │   └── <span class="file">CheckoutModal.tsx</span>      <span class="comment"># Itemized zero-payment checkout modal with order receipt</span>
+│   │   └── <span class="dir">views/</span>
+│   │       ├── <span class="file">StorefrontView.tsx</span>     <span class="comment"># Shopper product catalogue with search and shopping intent filters</span>
+│   │       └── <span class="file">MerchantView.tsx</span>       <span class="comment"># Merchant console: live sliders, session admin key, 3-policy simulation</span>
+│
+└── <span class="dir">devpost/</span>
+    ├── <span class="file">scope.md</span>                   <span class="comment"># Approved project scope, unique kernel, and PoC boundaries</span>
+    ├── <span class="file">prd.md</span>                     <span class="comment"># Complete Product Requirements Document</span>
+    ├── <span class="file">spec.md</span>                    <span class="comment"># Mathematical specifications and API contracts</span>
+    ├── <span class="file">checklist.md</span>               <span class="comment"># Build checklist tracking Slices 1 through 7</span>
+    ├── <span class="file">deployment-and-persistence.md</span> <span class="comment"># Verified cloud hosting analysis and durability architecture</span>
+    └── <span class="file">judge-notes.md</span>             <span class="comment"># Architecture decisions (DEC-001 to DEC-025), storyboard, and Devpost copy</span>
+        </div>
+      </div>
+
+      <!-- Section 3: Verified Offline Benchmark -->
+      <div class="card">
+        <h2>📊 RecSys Evaluation (N=400)</h2>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">Held-out synthetic test sessions evaluating multi-item synergy:</p>
+        <table class="metric-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Baseline</th>
+              <th>FairCart AI</th>
+              <th>Uplift</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>HitRate@4</strong></td>
+              <td>0.0625</td>
+              <td style="color: #34d399; font-weight: bold;">0.3075</td>
+              <td>+392%</td>
+            </tr>
+            <tr>
+              <td><strong>NDCG@4</strong></td>
+              <td>0.0351</td>
+              <td style="color: #34d399; font-weight: bold;">0.2645</td>
+              <td>+654%</td>
+            </tr>
+            <tr>
+              <td><strong>Catalog Coverage</strong></td>
+              <td>90.62%</td>
+              <td style="color: #34d399; font-weight: bold;">100.0%</td>
+              <td>+9.38%</td>
+            </tr>
+            <tr>
+              <td><strong>Pairwise Similarity</strong></td>
+              <td>0.2148</td>
+              <td style="color: #34d399; font-weight: bold;">0.1204</td>
+              <td>-44% (Diverse)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Section 4: Three-Policy Economic Simulation -->
+      <div class="card">
+        <h2>📈 3-Policy Simulation (N=1,000)</h2>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">Common Random Numbers evaluation across 9 shopper archetypes:</p>
+        <table class="metric-table">
+          <thead>
+            <tr>
+              <th>Policy</th>
+              <th>Profit</th>
+              <th>Floor Breaches</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>No Discount</strong></td>
+              <td>$14,210</td>
+              <td style="color: #34d399;">0 breaches</td>
+            </tr>
+            <tr>
+              <td><strong>Blanket 15%</strong></td>
+              <td>$13,490</td>
+              <td style="color: #f87171; font-weight: bold;">46 breaches</td>
+            </tr>
+            <tr>
+              <td><strong>FairCart AI</strong></td>
+              <td style="color: #34d399; font-weight: bold;">$15,680</td>
+              <td style="color: #34d399; font-weight: bold;">0 breaches</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">FairCart AI delivers <strong>+$2,190 higher profit</strong> than blanket discounts while strictly preserving the merchant's 15% margin floor.</p>
+      </div>
+    </div>
+
+    <footer>
+      <p>FairCart AI — Devpost "Build With AI: Basics" Hackathon (October 2026)</p>
+      <p style="margin-top: 0.25rem;">Built with pride using a plan-first, verified engineering methodology.</p>
+    </footer>
+  </div>
+</body>
+</html>

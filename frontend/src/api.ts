@@ -89,15 +89,25 @@ export async function fetchMerchantSettings(): Promise<MerchantSettings> {
   return res.json();
 }
 
-export async function updateMerchantSettings(settings: MerchantSettings): Promise<{ status: string; margin_floor: number; discount_cap: number }> {
+export async function updateMerchantSettings(
+  settings: MerchantSettings,
+  adminToken?: string
+): Promise<{ status: string; margin_floor: number; discount_cap: number }> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (adminToken) {
+    headers['X-Admin-Token'] = adminToken;
+  }
   const res = await fetch(`${API_BASE}/api/v1/settings`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(settings),
   });
   if (!res.ok) {
+    if (res.status === 403) {
+      throw new Error('Merchant authorization required to update policy guardrails.');
+    }
     throw new Error(`Failed to update merchant settings: ${res.status}`);
   }
   return res.json();

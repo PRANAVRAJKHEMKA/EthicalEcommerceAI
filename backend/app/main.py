@@ -1,7 +1,13 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+import time
+from collections import defaultdict
+from pathlib import Path
 
-from backend.app.config import settings
+from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+from backend.app.config import settings, BASE_DIR
 from backend.app.db.database import init_db
 from backend.app.db.repository import CatalogRepository
 from backend.app.engine import DecisionOrchestrator
@@ -23,6 +29,20 @@ from backend.app.models.schemas import (
 )
 from backend.app.engine.simulator import EconomicSimulator
 
+# In-memory sliding window rate limiter for CPU-intensive endpoints (zero external dependencies)
+SIMULATION_RATE_LIMITS: dict[str, list[float]] = defaultdict(list)
+
+def enforce_simulation_rate_limit(client_ip: str, max_requests: int = 15, window_seconds: int = 60) -> None:
+    now = time.time()
+    history = SIMULATION_RATE_LIMITS[client_ip]
+    SIMULATION_RATE_LIMITS[client_ip] = [t for t in history if now - t < window_seconds]
+    if len(SIMULATION_RATE_LIMITS[client_ip]) >= max_requests:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Simulation rate limit reached ({max_requests} requests per minute). Please wait a moment before running another evaluation.",
+        )
+    SIMULATION_RATE_LIMITS[client_ip].append(now)
+
 # Initialize FastAPI application
 app = FastAPI(
     title=settings.APP_NAME,
@@ -32,24 +52,30 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Enable CORS for local frontend development
+# Parse and configure production-safe CORS origins
+cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+if "*" in cors_origins:
+    cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize database schema on startup
+# Initialize database schema and ensure deterministic catalog seeding on startup
 @app.on_event("startup")
 def on_startup():
     init_db()
+    try:
+        repo = CatalogRepository()
+        if repo.count_products() < 32:
+            from backend.scripts.seed_catalog import seed_catalog
+            seed_catalog()
+    except Exception as e:
+        print(f"Startup catalog verification note: {e}")
 
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["System Health"])
 def get_health() -> HealthResponse:
@@ -128,8 +154,30 @@ def get_settings():
         raise HTTPException(status_code=500, detail=f"Failed to load merchant settings: {str(e)}")
 
 @app.post("/api/v1/settings", tags=["Merchant Settings"])
-def update_settings(req: MerchantSettingsRequest):
-    """Updates merchant policy guardrails (margin floor and discount cap) in SQLite."""
+def update_settings(
+    req: MerchantSettingsRequest,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    """Updates merchant policy guardrails (margin floor and discount cap) in SQLite.
+    
+    In environments where ADMIN_TOKEN is configured, requires a matching
+    'X-Admin-Token' or 'Authorization: Bearer <token>' header.
+    """
+    admin_token = settings.ADMIN_TOKEN
+    if admin_token and admin_token.strip():
+        supplied_token = x_admin_token
+        if not supplied_token and authorization:
+            parts = authorization.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                supplied_token = parts[1]
+        
+        if supplied_token != admin_token.strip():
+            raise HTTPException(
+                status_code=403,
+                detail="Merchant authorization required to update policy guardrails.",
+            )
+
     try:
         repo = CatalogRepository()
         repo.update_merchant_setting("margin_floor", req.margin_floor)
@@ -139,8 +187,10 @@ def update_settings(req: MerchantSettingsRequest):
         raise HTTPException(status_code=500, detail=f"Failed to save merchant settings: {str(e)}")
 
 @app.post("/api/v1/simulate", response_model=SimulationResponse, tags=["Economic Simulation"])
-def run_economic_simulation(request: SimulationRequest) -> SimulationResponse:
+def run_economic_simulation(request: SimulationRequest, req: Request) -> SimulationResponse:
     """Executes a reproducible 3-policy simulation comparator with Common Random Numbers."""
+    client_ip = req.client.host if req.client else "unknown"
+    enforce_simulation_rate_limit(client_ip)
     try:
         simulator = EconomicSimulator()
         return simulator.run_simulation(
@@ -238,9 +288,30 @@ def delete_events(session_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to clear session events: {str(e)}")
 
 @app.get("/", tags=["Root"])
-def root_status():
+def root_status(request: Request):
+    """Returns basic API discovery information or serves the compiled SPA for browser requests."""
+    accept = request.headers.get("accept", "")
+    frontend_dist = BASE_DIR / "frontend" / "dist"
+    if "text/html" in accept and frontend_dist.exists() and (frontend_dist / "index.html").exists():
+        return FileResponse(frontend_dist / "index.html")
     return {
         "message": "FairCart AI Decision API is running.",
         "documentation": "/docs",
         "health": "/api/v1/health",
     }
+
+frontend_dist = BASE_DIR / "frontend" / "dist"
+if frontend_dist.exists() and (frontend_dist / "index.html").exists():
+    if (frontend_dist / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str, request: Request):
+        if full_path.startswith("api/") or full_path in ("docs", "redoc", "openapi.json"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        target_file = frontend_dist / full_path
+        if target_file.is_file():
+            return FileResponse(target_file)
+        if "text/html" in request.headers.get("accept", ""):
+            return FileResponse(frontend_dist / "index.html")
+        raise HTTPException(status_code=404, detail="Not Found")

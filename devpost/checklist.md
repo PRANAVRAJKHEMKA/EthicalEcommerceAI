@@ -98,9 +98,22 @@ Build mode: learn
   Verify (mechanical): Run full 101-test suite in `python -m unittest discover -s backend/tests`, verify zero TypeScript errors, verify live backend and frontend server connectivity.
   Commit: `feat(simulation): Milestone 5 three-policy economic simulation comparator and merchant intelligence console`
 
+- [x] **7. Public Deployment Architecture, Containerization & Devpost Release Candidate (Milestone 6)**
+  Becomes usable: Unified multi-stage `Dockerfile` (Node 20 + Python 3.12 slim), self-healing database seeding on startup, compute endpoint sliding-window IP rate limiting (15/min on `/api/v1/simulate`), demo-safe session administrative token for merchant guardrail modification (`POST /api/v1/settings`), content-negotiated SPA serving, verified zero-cost cloud deployment guide (`devpost/deployment-and-persistence.md`), and complete competition submission storyboard and judge notes in `devpost/judge-notes.md`.
+  Why now: Delivers a competition-ready, secure, reproducible release candidate without incurring cloud charges or exposing administrative credentials.
+  PRD ref: `prd.md > 1. System Topology`, `prd.md > Security`
+  Spec ref: `spec.md > 4. Where It Runs`, `deployment-and-persistence.md`
+  Build: Author `Dockerfile`, `.dockerignore`, `.env.example`; implement sliding-window rate limiting on `POST /api/v1/simulate`; gate `POST /api/v1/settings` with `ADMIN_TOKEN`; update `MerchantView.tsx` with session-safe admin key input; update `deployment-and-persistence.md` and `judge-notes.md`.
+  Verify (mechanical): Run full 101 backend unit tests (100% pass), build frontend production bundle (`tsc -b && vite build` in 4.26s), test rate limiter (15 ok, 1 429), test admin auth (403 unauth, 200 auth), audit git secret hygiene (0 secrets in git).
+  Commit: `feat(ship): Milestone 6 public deployment architecture, containerization, and security guardrails`
+
 ## Hands-on Checkpoints
 - [x] Checkpoint 1 (After Slice 1): Verify backend health check and database seeding.
 - [x] Checkpoint 2 (After Slice 3): Try shopping in the storefront and verify that margin floors prevent invalid discounts.
 - [x] Checkpoint 3 (After Slice 5): Run the 3-policy simulation and review comparative metrics.
 - [x] Checkpoint 4 (After Slice 5B): Verify intentional hover dwell thresholds and deliberate modal views in live browser.
-- [ ] Final Review (After Slice 6): Walk through the complete 2-minute demo script before packaging for Devpost.
+- [x] Final Review (After Slice 6/7): Walk through the complete 2-minute demo script before packaging for Devpost.
+
+## Code Tour and App Map
+- [x] Completed architectural review, system data flow diagram, and self-contained HTML app map in `devpost/app-map.html`.
+

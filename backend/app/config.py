@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     PORT: int = 8000
     HOST: str = "127.0.0.1"
     
+    # Runtime & Environment
+    ENVIRONMENT: str = "development"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
+    ADMIN_TOKEN: str | None = None
+    
     # Database
     DATABASE_PATH: str = str(BASE_DIR / "faircart.db")
     

@@ -48,6 +48,17 @@ export function MerchantView({ products, health }: MerchantViewProps) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Demo-safe administrative access token (persisted strictly in browser session)
+  const [adminToken, setAdminToken] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return sessionStorage.getItem('faircart_admin_token') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [showAdminInput, setShowAdminInput] = useState<boolean>(false);
+
   // Simulation state
   const [numSessions, setNumSessions] = useState<number>(1000);
   const [randomSeed, setRandomSeed] = useState<number>(42);
@@ -107,11 +118,14 @@ export function MerchantView({ products, health }: MerchantViewProps) {
     try {
       setSavingSettings(true);
       setSaveError(null);
-      await updateMerchantSettings(settings);
+      await updateMerchantSettings(settings, adminToken.trim() || undefined);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to update merchant settings');
+      if (err instanceof Error && err.message.includes('authorization')) {
+        setShowAdminInput(true);
+      }
     } finally {
       setSavingSettings(false);
     }
@@ -122,11 +136,14 @@ export function MerchantView({ products, health }: MerchantViewProps) {
     setSettings(defaults);
     try {
       setSavingSettings(true);
-      await updateMerchantSettings(defaults);
+      await updateMerchantSettings(defaults, adminToken.trim() || undefined);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to reset settings');
+      if (err instanceof Error && err.message.includes('authorization')) {
+        setShowAdminInput(true);
+      }
     } finally {
       setSavingSettings(false);
     }
@@ -305,6 +322,58 @@ export function MerchantView({ products, health }: MerchantViewProps) {
               <p className="text-[11px] text-slate-500 mt-1">
                 Hard ceiling on any single complementary product discount, preventing predatory price destruction.
               </p>
+            </div>
+
+            {/* Merchant Access Key Configuration (Demo-Safe Protection) */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium">Merchant Administration</span>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminInput(!showAdminInput)}
+                  className="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>{adminToken ? 'Admin Key Set' : showAdminInput ? 'Hide Key' : 'Admin Key (Optional)'}</span>
+                </button>
+              </div>
+
+              {showAdminInput && (
+                <div className="mt-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-700">Production Admin Token:</span>
+                    <span className="text-slate-400">Kept in session storage only</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      placeholder="Enter ADMIN_TOKEN (if required by host)"
+                      value={adminToken}
+                      onChange={(e) => {
+                        setAdminToken(e.target.value);
+                        try {
+                          sessionStorage.setItem('faircart_admin_token', e.target.value);
+                        } catch {}
+                      }}
+                      className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded bg-white font-mono placeholder:text-slate-400"
+                    />
+                    {adminToken && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminToken('');
+                          try {
+                            sessionStorage.removeItem('faircart_admin_token');
+                          } catch {}
+                        }}
+                        className="px-2 py-1 text-[11px] bg-slate-200 hover:bg-slate-300 rounded text-slate-700"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
