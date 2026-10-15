@@ -63,6 +63,9 @@ class RecommendationItem(BaseModel):
     image_url: str
     affinity_score: float = Field(..., description="Explainable affinity relevance score in [0.0, 1.0]")
     compatibility_reason: str = Field(..., description="Factual basis for recommending this product")
+    association_lift: float = Field(default=1.0, description="Mined association rule lift (> 1.0 indicates positive co-occurrence)")
+    association_confidence: float = Field(default=0.0, description="Mined association rule confidence")
+    is_multi_item_match: bool = Field(default=False, description="True if recommendation associates with 2 or more cart items")
     is_offered: bool
     tier: str = Field(..., description="Offer tier: BUNDLE_DISCOUNT or NONE")
     discount_percentage: float
@@ -146,3 +149,21 @@ class ExplanationResponse(BaseModel):
     fallback_applied: bool = Field(default=False)
     fallback_reason: str | None = None
     execution_latency_ms: float
+
+class SessionEventCreate(BaseModel):
+    """Schema for recording an anonymous session event (Zero PII)."""
+    session_id: str = Field(..., description="Anonymous session identifier")
+    event_type: str = Field(..., description="product_view, search_submitted, add_to_cart, remove_from_cart, cart_saved, recommendation_shown, recommendation_accepted, offer_shown, simulated_purchase_completed")
+    product_id: str = Field(default="", description="Target product ID if applicable")
+    shopping_context: str = Field(default="all", description="Declared shopping intent context")
+    metadata: dict = Field(default_factory=dict, description="Validated event metadata")
+
+class SessionEvent(BaseModel):
+    """Persisted anonymous session event schema."""
+    id: str
+    session_id: str
+    event_type: str
+    product_id: str
+    shopping_context: str
+    metadata: dict
+    timestamp: str

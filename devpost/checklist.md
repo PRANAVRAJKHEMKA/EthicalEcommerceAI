@@ -55,6 +55,15 @@ Build mode: learn
   Verify (mechanical): Run 33/33 backend unit tests, build frontend production bundle (`tsc -b && vite build`), test live endpoints (`/health`, `/catalog`, `/explanation`, `/settings`), verify live browser behavior with 5 Edge CDP screenshots.
   Commit: `Milestone 4: Product experience refinement, persistent state, Gemini explanations, and runtime recovery`
 
+- [x] **4B. Context-Aware Recommendation Engine Upgrade (Milestone 4B)**
+  Becomes usable: Whole-basket multi-stage candidate generation and scoring ($0.35 \times S_{\text{comp}} + 0.30 \times S_{\text{assoc}} + 0.20 \times S_{\text{context}} + 0.05 \times S_{\text{session}} + \text{base\_vis}$); association rule mining pipeline with support, confidence, and lift metrics mined from reproducible synthetic transaction history (seed=42) and stored in SQLite; multi-item antecedent rules ($\{A, B\} \to C$); subcategory and category diversity enforcement; privacy-preserving anonymous session interaction event logging (`POST/GET/DELETE /api/v1/events`); automated offline evaluation framework benchmarking HitRate@K, Recall@K, NDCG@K, catalog coverage, and category diversity; multi-item synergy and lift UI badges (`✨ Multi-Item Match`, `📈 X.Xx Lift`).
+  Why now: Advances recommendation intelligence beyond static 1-to-1 pairings into context-aware, whole-basket co-occurrence optimization while maintaining absolute privacy and financial guardrails.
+  PRD ref: `prd.md > Feature B, C, D`, `prd.md > View 1`
+  Spec ref: `spec.md > 3. Mathematical Model`, `spec.md > 5.7 /events`, `spec.md > 6. Component 2 & 9`
+  Build: Implement `associations.py` (association mining), upgrade `recommender.py` (whole-basket pipeline & diversity), update `database.py` and `repository.py` (`session_events` and `basket_association_rules`), expose `/api/v1/events`, build `evaluate_recommendations.py`, wire frontend event logging and lift/synergy badges.
+  Verify (mechanical): Run 43/43 backend tests, run `evaluate_recommendations.py` (+0.39 HitRate gain, +0.70 diversity gain), compile frontend bundle (`tsc -b && vite build`), verify live browser behavior with 2 Edge CDP screenshots.
+  Commit: `Milestone 4B: Context-aware multi-stage recommendation pipeline, association mining, and anonymous session history`
+
 - [ ] **5. 3-Policy Simulation Comparator (Milestone 5)**
   Becomes usable: Merchant can run a 1,000-session 3-policy simulation comparator directly from the Merchant Console to evaluate No Discount vs Blanket 15% vs FairCart AI with reproducible fixed seeds (`seed=42`).
   Why now: Demonstrates the economic superiority of margin-aware value optimization over blanket discounting.

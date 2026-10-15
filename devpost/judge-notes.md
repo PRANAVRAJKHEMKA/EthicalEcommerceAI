@@ -402,6 +402,52 @@
 
 ---
 
+### DEC-019: Context-Aware Whole-Basket Recommender, Multi-Item Association Rules, and Privacy-Preserving Session Event Architecture
+
+- **What We Decided & Implemented:**
+  1. **Whole-Basket Multi-Stage Recommendation Pipeline (`recommender.py`):**
+     - Replaced static 1-to-1 pairing rules with a multi-stage whole-basket ranker evaluating all items in the shopper's active cart.
+     - **Stage 1 (Candidate Generation):** Union of direct complements across all cart items, mined multi-item association rules, category affinity, and anonymous session browsing history.
+     - **Stage 2 (Multi-Signal Scoring):**
+       $$S = 0.35 \times S_{\text{comp}} + 0.30 \times S_{\text{assoc}} + 0.20 \times S_{\text{context}} + 0.05 \times S_{\text{session}} + \text{base\_vis}$$
+       where $S_{\text{assoc}} = \min(1.0, \frac{\text{lift} - 1.0}{3.0}) \times \text{confidence}$ (derived from mined association co-occurrence).
+     - **Stage 3 (Factual Synergy Explanation):** Multi-parent factual reasons articulating concrete pairings (e.g., *"Complements Ergonomic Mechanical Keyboard and Precision Vertical Wireless Mouse simultaneously"*), association co-occurrence lift, and user-selected setup intent.
+     - **Stage 4 (Diversity Enforcement):** Strict subcategory diversity (maximum 1 item per subcategory) and category diversity (maximum 2 items per category) across top-$K$ recommendations.
+  2. **Reproducible Association Rule Mining (`associations.py`):**
+     - Mined 401 association rules from 600 synthetic transactions generated across 10 desk setup archetypes (seed=42).
+     - Evaluated support, confidence, and lift metrics, supporting multi-item antecedents ($\{A, B\} \to C$).
+     - Handled zero-denominator boundary conditions ($P(B) \le 0 \implies \text{lift} = 1.0$) and multi-item antecedent validation.
+     - Stored rules deterministically in SQLite `basket_association_rules` table.
+  3. **Privacy-Preserving Anonymous Session Event Model:**
+     - Created `session_events` table in SQLite with zero PII (anonymous `session_id`, `event_type`, `product_id`, `shopping_context`, `metadata_json`, `timestamp`).
+     - Exposed `POST /api/v1/events`, `GET /api/v1/events`, and `DELETE /api/v1/events`.
+     - Supports full session lifecycle: cart additions/removals log anonymous interaction events; cart reset or order completion invokes `DELETE /api/v1/events` to wipe session records.
+     - Distinguishes browsing intent (`product_view`, `search_submitted`) from purchase intent (`add_to_cart`, `recommendation_accepted`).
+  4. **Engine B Independence & Authority:**
+     - Engine B economic optimizer remains completely independent and authoritative over all monetary values.
+     - Dynamically formats multi-item prerequisite condition strings (*"Valid when bundled with Ergonomic Mechanical Keyboard and Precision Vertical Wireless Mouse"*).
+     - Automatically revokes bundle discounts back to standard price when prerequisite parent items are removed.
+  5. **Offline Model Evaluation Framework (`evaluate_recommendations.py`):**
+     - Evaluated whole-basket ranker against 1-to-1 baseline across held-out synthetic baskets ($N=200+$, seed=100, $K=4$).
+     - Quantitative results:
+       - **HitRate@4:** 0.1579 (baseline) $\to$ 0.5526 (improved) [**+0.3947**]
+       - **Recall@4:** 0.1579 (baseline) $\to$ 0.5526 (improved) [**+0.3947**]
+       - **NDCG@4:** 0.0886 (baseline) $\to$ 0.4952 (improved) [**+0.4066**]
+       - **Catalog Coverage:** 142.1% $\to$ 152.6% [**+10.5%**]
+       - **Avg Category Diversity:** 2.24 $\to$ 2.94 categories [**+0.70**]
+     - *Ethical Grounding Note:* Synthetic transactions are explicitly labeled as algorithmic demonstrations, not real-world consumer behavior.
+  6. **UI Integration & Visual Verification:**
+     - Added `✨ Multi-Item Match` and `📈 X.Xx Lift` badges to `RecommendationCard.tsx`.
+     - Updated transparency drawer with association co-occurrence lift, confidence, and basket synergy explanation.
+     - Verified live in browser via Edge CDP screenshots: `screenshot_context_aware_multi_item_recommendations.png` and `screenshot_context_aware_transparency_details.png`.
+  7. **Automated Testing:**
+     - 43/43 automated backend tests pass in 0.93s (`test_context_aware_engine.py` covering multi-item synergy, context shifts, association metrics, cart exclusions, diversity, session events lifecycle, quote agreement, and offline evaluation).
+     - Frontend production build compiles cleanly in 8.4s.
+
+- **Status:** **Implemented, Tested & Verified (in Context-Aware Engine Upgrade)**.
+
+---
+
 ## 2. Pending Decisions
 
 - **PEN-001 (Spec Stage):** Specific Scikit-Learn Model architecture for purchase propensity ranking (Heuristic Baseline for MVP; scikit-learn classifier designed as optional pluggable extension).

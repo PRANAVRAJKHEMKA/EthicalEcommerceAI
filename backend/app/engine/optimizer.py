@@ -144,7 +144,12 @@ class EconomicOptimizer:
                 best_savings_cents = discount_cents
                 best_final_cents = final_price_cents
 
-        parent_name = cart_items[0][0].name if cart_items else "cart item"
+        if len(cart_items) == 1:
+            conditions_str = f"Valid when bundled with {cart_items[0][0].name}"
+        elif len(cart_items) == 2:
+            conditions_str = f"Valid when bundled with {cart_items[0][0].name} and {cart_items[1][0].name}"
+        else:
+            conditions_str = "Valid when bundled with active cart items"
 
         # 4. Formulate authoritative result
         if best_discount > 0.0 and best_incremental_utility > 0.0:
@@ -155,7 +160,7 @@ class EconomicOptimizer:
                 reference_price=round(candidate_ref_cents / 100.0, 2),
                 final_price=round(best_final_cents / 100.0, 2),
                 savings=round(best_savings_cents / 100.0, 2),
-                conditions=f"Valid when bundled with {parent_name}",
+                conditions=conditions_str,
                 basket_gross_margin=round(best_margin, 4),
                 decision_reason=(
                     f"Eligible bundle: basket gross margin is {best_margin * 100.0:.1f}% "

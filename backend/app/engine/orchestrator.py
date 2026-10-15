@@ -158,10 +158,12 @@ class DecisionOrchestrator:
 
         # 3. Retrieve full catalog and run Engine A (Ranked Candidates)
         catalog = self.repository.get_all_entities()
+        viewed_ids = self.repository.get_session_viewed_product_ids(request.session_id)
         candidates = self.recommender.find_recommendations(
             cart_items=cart_entities,
             catalog=catalog,
             shopping_context=request.shopping_context,
+            session_viewed_ids=viewed_ids,
             top_k=4,
         )
 
@@ -212,6 +214,9 @@ class DecisionOrchestrator:
                 image_url=cand.product.image_url,
                 affinity_score=cand.affinity_score,
                 compatibility_reason=cand.compatibility_reason,
+                association_lift=cand.association_lift,
+                association_confidence=cand.association_confidence,
+                is_multi_item_match=cand.is_multi_item_match,
                 is_offered=opt_result.is_offered,
                 tier=opt_result.action_type,
                 discount_percentage=round(opt_result.discount_percentage, 4),

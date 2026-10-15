@@ -80,6 +80,37 @@ def init_db(db_path: str | None = None) -> None:
                 ('margin_floor', 0.20, datetime('now')),
                 ('discount_cap', 0.20, datetime('now'));
         """)
+
+        # Anonymous Session Events: stores strictly anonymous browsing & interaction events (zero PII)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS session_events (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                product_id TEXT NOT NULL DEFAULT '',
+                shopping_context TEXT NOT NULL DEFAULT 'all',
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                timestamp TEXT NOT NULL
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_events_timestamp ON session_events(timestamp);")
+
+        # Association Rules from Historical/Synthetic Transactions
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS basket_association_rules (
+                id TEXT PRIMARY KEY,
+                antecedent_ids TEXT NOT NULL,
+                consequent_id TEXT NOT NULL,
+                support REAL NOT NULL,
+                confidence REAL NOT NULL,
+                lift REAL NOT NULL,
+                co_occurrence_count INTEGER NOT NULL,
+                is_synthetic INTEGER NOT NULL DEFAULT 1
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_assoc_antecedent ON basket_association_rules(antecedent_ids);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_assoc_consequent ON basket_association_rules(consequent_id);")
         
         # Indexes for fast candidate filtering
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);")

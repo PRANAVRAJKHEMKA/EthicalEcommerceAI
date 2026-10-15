@@ -57,6 +57,9 @@ export interface RecommendationItem {
   image_url: string;
   affinity_score: number;
   compatibility_reason: string;
+  association_lift?: number;
+  association_confidence?: number;
+  is_multi_item_match?: boolean;
   is_offered: boolean;
   tier: string;
   discount_percentage: number;
@@ -151,3 +154,22 @@ export interface MerchantSettings {
   margin_floor: number;
   discount_cap: number;
 }
+
+export interface SessionEventCreate {
+  session_id: string;
+  event_type: string;
+  product_id?: string;
+  shopping_context?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SessionEvent {
+  id: string;
+  session_id: string;
+  event_type: string;
+  product_id: string;
+  shopping_context: string;
+  metadata: Record<string, unknown>;
+  timestamp: string;
+}
+

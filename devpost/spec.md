@@ -97,6 +97,17 @@ $$E[\text{contribution\_profit}(a)] = P(\text{conversion} \mid \text{context}, a
   If no discounted action satisfies these criteria, Engine B returns $\text{NO\_OFFER}$.
 - **Heuristic Conversion Transparency:** Because this proof of concept operates without live production A/B traffic, conversion probabilities are explicitly documented as heuristic baseline estimates based on cart value, session dwell time, and price elasticity, rather than empirical causal claims.
 
+### 3.4 Whole-Basket Multi-Stage Candidate Generation & Hybrid Scoring
+For candidate complementary items $c \notin \text{cart}$, the whole-basket affinity score is defined as:
+$$S(c) = 0.35 \times S_{\text{comp}}(c) + 0.30 \times S_{\text{assoc}}(c) + 0.20 \times S_{\text{context}}(c) + 0.05 \times S_{\text{session}}(c) + \text{base\_vis}(c)$$
+
+Where:
+- $S_{\text{comp}}(c) \in [0, 1]$ represents direct catalog compatibility across all items currently in the basket.
+- $S_{\text{assoc}}(c) = \min\left(1.0, \frac{\text{lift} - 1.0}{3.0}\right) \times \text{confidence}$ grounds ranking in mined multi-item association rules ($\{A, B\} \to C$).
+- $S_{\text{context}}(c) = 1.0$ if $c$'s tags and use cases match the active shopping intent context, else $0.0$.
+- $S_{\text{session}}(c) = 1.0$ if $c$ was viewed during the active anonymous session, else $0.0$.
+- **Diversity Constraints:** Top-$K$ recommendations strictly enforce maximum 1 candidate per subcategory and maximum 2 candidates per category.
+
 ---
 
 ## 4. Stack & Environment Configuration
@@ -332,6 +343,15 @@ Executes the reproducible 1,000-session 3-policy simulation comparator.
 }
 ```
 
+### 5.6 `GET / POST /api/v1/settings`
+Retrieves or updates active merchant policy parameters (`margin_floor`, `discount_cap`) with SQLite persistence.
+
+### 5.7 `POST / GET / DELETE /api/v1/events`
+Anonymous, privacy-preserving session interaction event model (zero PII):
+- `POST /api/v1/events`: Records browsing (`product_view`, `search_submitted`, `context_selected`) or purchase intent (`add_to_cart`, `remove_from_cart`, `recommendation_accepted`, `simulated_purchase_completed`).
+- `GET /api/v1/events?session_id=...`: Retrieves session history for the active session.
+- `DELETE /api/v1/events?session_id=...`: Wipes session events upon cart reset or checkout completion.
+
 ---
 
 ## 6. Component Architecture & Modular Layout
@@ -339,28 +359,31 @@ Executes the reproducible 1,000-session 3-policy simulation comparator.
 ```text
 D:\EthicalEcommerceAI\
 ├── backend/
-│   ├── requirements.txt            # Minimal dependencies: fastapi, uvicorn, pydantic, httpx, numpy
+│   ├── requirements.txt            # Pinned dependencies: fastapi, uvicorn, pydantic, pydantic-core, httpx, numpy
 │   ├── .env.example                # GEMINI_API_KEY=
 │   ├── scripts/
-│   │   └── seed_catalog.py         # Deterministic seed script (20 products)
+│   │   ├── seed_catalog.py         # Deterministic seed script (32 products)
+│   │   └── evaluate_recommendations.py # Reproducible offline evaluation on synthetic holdout baskets
 │   ├── app/
-│   │   ├── main.py                 # FastAPI application & router mounting
+│   │   ├── main.py                 # FastAPI application, route mounting, & session event handlers
 │   │   ├── config.py               # Settings loader
 │   │   ├── db/
-│   │   │   ├── database.py         # sqlite3 helper & connection manager
-│   │   │   └── repository.py       # CatalogRepository (query products & stock)
+│   │   │   ├── database.py         # sqlite3 helper, session_events & basket_association_rules schema
+│   │   │   └── repository.py       # CatalogRepository (query products, rules, stock, & session events)
 │   │   ├── models/
-│   │   │   └── schemas.py          # Pydantic v2 schemas for requests & responses
+│   │   │   └── schemas.py          # Pydantic v2 schemas for requests, responses, & session events
 │   │   ├── engine/
-│   │   │   ├── recommender.py      # Engine A: Content candidate ranking & affinity scoring
+│   │   │   ├── associations.py     # Reproducible synthetic transaction mining (support, confidence, lift)
+│   │   │   ├── recommender.py      # Engine A: Whole-basket multi-stage candidate generation & hybrid ranking
 │   │   │   ├── optimizer.py        # Engine B: Margin floor & incremental utility optimizer
 │   │   │   └── orchestrator.py     # Engine C: Decision orchestrator
 │   │   └── services/
-│   │       ├── gemini_service.py   # Asynchronous Gemini client with fallback
+│   │       ├── gemini_service.py   # Asynchronous Gemini client with deterministic offline fallback
 │   │       └── simulation_service.py # Deterministic 3-policy simulation generator
 │   └── tests/
 │       ├── test_financial_invariants.py # Unit tests: margin floor, price ceiling, decimal rounding
-│       └── test_api_contracts.py       # Integration tests: FastAPI endpoints & schemas
+│       ├── test_api_contracts.py       # Integration tests: FastAPI endpoints & schemas
+│       └── test_context_aware_engine.py # Whole-basket synergy, association lift, and offline eval tests
 │
 └── frontend/
     ├── package.json

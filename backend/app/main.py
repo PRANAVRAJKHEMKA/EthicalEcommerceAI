@@ -6,6 +6,7 @@ from backend.app.db.database import init_db
 from backend.app.db.repository import CatalogRepository
 from backend.app.engine import DecisionOrchestrator
 from backend.app.engine.explanation import GeminiExplanationService
+from backend.app.engine.associations import get_association_engine
 from backend.app.models.schemas import (
     BasketQuote,
     DecisionRequest,
@@ -16,6 +17,7 @@ from backend.app.models.schemas import (
     MerchantSettingsRequest,
     Product,
     QuoteRequest,
+    SessionEventCreate,
 )
 
 # Initialize FastAPI application
@@ -132,6 +134,69 @@ def update_settings(req: MerchantSettingsRequest):
         return {"status": "updated", "margin_floor": req.margin_floor, "discount_cap": req.discount_cap}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save merchant settings: {str(e)}")
+
+ALLOWED_EVENT_TYPES = {
+    "product_view",
+    "product_viewed",
+    "search_submitted",
+    "add_to_cart",
+    "cart_item_added",
+    "remove_from_cart",
+    "cart_item_removed",
+    "cart_saved",
+    "recommendation_shown",
+    "recommendation_accepted",
+    "offer_shown",
+    "context_selected",
+    "simulated_purchase_completed",
+}
+
+EVENT_TYPE_NORMALIZATION = {
+    "product_viewed": "product_view",
+    "cart_item_added": "add_to_cart",
+    "cart_item_removed": "remove_from_cart",
+}
+
+@app.post("/api/v1/events", tags=["Session Events"])
+def record_event(evt: SessionEventCreate):
+    """Records an anonymous interaction event (distinguishing browsing vs purchase intent) with zero PII."""
+    if evt.event_type not in ALLOWED_EVENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid event_type '{evt.event_type}'. Must be one of {sorted(ALLOWED_EVENT_TYPES)}",
+        )
+    normalized_type = EVENT_TYPE_NORMALIZATION.get(evt.event_type, evt.event_type)
+    try:
+        repo = CatalogRepository()
+        event_id = repo.record_session_event(
+            session_id=evt.session_id,
+            event_type=normalized_type,
+            product_id=evt.product_id,
+            shopping_context=evt.shopping_context,
+            metadata=evt.metadata,
+        )
+        return {"status": "recorded", "event_id": event_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to record event: {str(e)}")
+
+@app.get("/api/v1/events", tags=["Session Events"])
+def get_events(session_id: str, limit: int = 50):
+    """Retrieves recent anonymous interaction events for a session."""
+    try:
+        repo = CatalogRepository()
+        return repo.get_session_events(session_id=session_id, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch session events: {str(e)}")
+
+@app.delete("/api/v1/events", tags=["Session Events"])
+def delete_events(session_id: str):
+    """Clears all session interaction events upon shopper reset."""
+    try:
+        repo = CatalogRepository()
+        deleted = repo.clear_session_events(session_id=session_id)
+        return {"status": "deleted", "events_cleared": deleted}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear session events: {str(e)}")
 
 @app.get("/", tags=["Root"])
 def root_status():

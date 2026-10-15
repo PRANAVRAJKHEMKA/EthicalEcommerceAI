@@ -163,3 +163,91 @@ class CatalogRepository:
             conn.commit()
         finally:
             conn.close()
+
+    def record_session_event(
+        self,
+        session_id: str,
+        event_type: str,
+        product_id: str = "",
+        shopping_context: str = "all",
+        metadata: dict | None = None,
+    ) -> str:
+        """Records an anonymous session event with zero PII."""
+        import json
+        import uuid
+        from datetime import datetime, timezone
+
+        event_id = f"evt-{uuid.uuid4().hex[:12]}"
+        timestamp = datetime.now(timezone.utc).isoformat()
+        meta_str = json.dumps(metadata or {})
+
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO session_events (id, session_id, event_type, product_id, shopping_context, metadata_json, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+            """, (event_id, session_id, event_type, product_id, shopping_context, meta_str, timestamp))
+            conn.commit()
+            return event_id
+        finally:
+            conn.close()
+
+    def get_session_events(self, session_id: str, limit: int = 50) -> list[dict]:
+        """Retrieves anonymous event history for a given session."""
+        import json
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, session_id, event_type, product_id, shopping_context, metadata_json, timestamp
+                FROM session_events
+                WHERE session_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?;
+            """, (session_id, limit))
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "session_id": r["session_id"],
+                    "event_type": r["event_type"],
+                    "product_id": r["product_id"],
+                    "shopping_context": r["shopping_context"],
+                    "metadata": json.loads(r["metadata_json"]) if r["metadata_json"] else {},
+                    "timestamp": r["timestamp"],
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def get_session_viewed_product_ids(self, session_id: str) -> list[str]:
+        """Returns distinct product IDs viewed or interacted with in the active session."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT product_id
+                FROM session_events
+                WHERE session_id = ? AND product_id != '' AND event_type IN ('product_view', 'search_submitted')
+                ORDER BY timestamp DESC
+                LIMIT 20;
+            """, (session_id,))
+            rows = cursor.fetchall()
+            return [r["product_id"] for r in rows if r["product_id"]]
+        finally:
+            conn.close()
+
+    def clear_session_events(self, session_id: str) -> int:
+        """Deletes all anonymous interaction events for a session upon shopper reset."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM session_events WHERE session_id = ?;", (session_id,))
+            deleted = cursor.rowcount
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+

@@ -52,6 +52,19 @@ export function RecommendationCard({
                 ✨ AI Copy
               </span>
             )}
+            {recommendation.is_multi_item_match && (
+              <span className="text-[9px] bg-purple-100 text-purple-800 font-semibold px-1.5 py-0.5 rounded border border-purple-200">
+                ✨ Multi-Item Match
+              </span>
+            )}
+            {recommendation.association_lift !== undefined && recommendation.association_lift > 1.2 && (
+              <span
+                className="text-[9px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded border border-blue-200"
+                title={`Association lift: ${recommendation.association_lift.toFixed(1)}x (${Math.round((recommendation.association_confidence ?? 0) * 100)}% confidence)`}
+              >
+                📈 {recommendation.association_lift.toFixed(1)}x Lift
+              </span>
+            )}
           </div>
 
           <button
@@ -156,6 +169,16 @@ export function RecommendationCard({
             <p className="leading-relaxed">
               <strong>Relevance Score:</strong> {Math.round(recommendation.affinity_score * 100)}% affinity based on compatibility attributes.
             </p>
+            {recommendation.is_multi_item_match && (
+              <p className="leading-relaxed text-purple-700">
+                <strong>Basket Synergy:</strong> Directly complements multiple items currently in your basket.
+              </p>
+            )}
+            {recommendation.association_lift !== undefined && recommendation.association_lift > 1.0 && (
+              <p className="leading-relaxed text-blue-700">
+                <strong>Basket Association:</strong> {recommendation.association_lift.toFixed(2)}x co-occurrence lift ({Math.round((recommendation.association_confidence ?? 0) * 100)}% confidence in synthetic basket transactions).
+              </p>
+            )}
             {factualSignals && factualSignals.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-0.5">
                 {factualSignals.map((sig, i) => (

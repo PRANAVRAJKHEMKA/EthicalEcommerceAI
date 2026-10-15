@@ -8,6 +8,8 @@ import {
   ExplanationRequest,
   ExplanationResponse,
   MerchantSettings,
+  SessionEventCreate,
+  SessionEvent,
 } from './types.ts';
 
 // Configurable API base url supporting environment override or relative URL for unified deployment
@@ -98,3 +100,48 @@ export async function updateMerchantSettings(settings: MerchantSettings): Promis
   }
   return res.json();
 }
+
+export async function recordSessionEvent(
+  evt: SessionEventCreate
+): Promise<{ status: string; event_id: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/events`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(evt),
+  });
+  if (!res.ok) {
+    throw new Error(`Record session event failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchSessionEvents(
+  sessionId: string,
+  limit = 50
+): Promise<SessionEvent[]> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/events?session_id=${encodeURIComponent(sessionId)}&limit=${limit}`
+  );
+  if (!res.ok) {
+    throw new Error(`Fetch session events failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function clearSessionEvents(
+  sessionId: string
+): Promise<{ status: string; events_cleared: number }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/events?session_id=${encodeURIComponent(sessionId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Clear session events failed with status ${res.status}`);
+  }
+  return res.json();
+}
+

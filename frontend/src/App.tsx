@@ -7,7 +7,14 @@ import {
   RecommendationItem,
   ItemExplanation,
 } from './types.ts';
-import { fetchHealth, fetchCatalog, fetchDecision, fetchExplanation } from './api.ts';
+import {
+  fetchHealth,
+  fetchCatalog,
+  fetchDecision,
+  fetchExplanation,
+  recordSessionEvent,
+  clearSessionEvents,
+} from './api.ts';
 import { Header } from './components/Header.tsx';
 import { CartDrawer } from './components/CartDrawer.tsx';
 import { CheckoutModal } from './components/CheckoutModal.tsx';
@@ -35,6 +42,20 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
+
+  // Anonymous session ID persisted to sessionStorage (cleared on tab close)
+  const [sessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'sess-shopper';
+    try {
+      const existing = sessionStorage.getItem('faircart_session_id');
+      if (existing) return existing;
+      const newId = `sess-${Math.random().toString(36).substring(2, 10)}`;
+      sessionStorage.setItem('faircart_session_id', newId);
+      return newId;
+    } catch {
+      return 'sess-shopper';
+    }
+  });
 
   // Cart state persisted to localStorage
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -160,7 +181,7 @@ export default function App() {
     });
 
     fetchDecision({
-      session_id: 'sess-shopper',
+      session_id: sessionId,
       cart_items: cart.map((i) => ({
         product_id: i.product.id,
         quantity: i.quantity,
@@ -261,6 +282,13 @@ export default function App() {
     discountPct?: number,
     condition?: string
   ) => {
+    recordSessionEvent({
+      session_id: sessionId,
+      event_type: 'cart_item_added',
+      product_id: product.id,
+      shopping_context: shoppingContext,
+    }).catch(() => {});
+
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
@@ -304,21 +332,43 @@ export default function App() {
   };
 
   const handleRemoveItem = (productId: string) => {
+    recordSessionEvent({
+      session_id: sessionId,
+      event_type: 'cart_item_removed',
+      product_id: productId,
+      shopping_context: shoppingContext,
+    }).catch(() => {});
+
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
   const handleClearCart = () => {
     setCart([]);
     setDismissedIds(new Set());
+    clearSessionEvents(sessionId).catch(() => {});
   };
 
   const handleCompleteOrder = () => {
+    recordSessionEvent({
+      session_id: sessionId,
+      event_type: 'simulated_purchase_completed',
+      shopping_context: shoppingContext,
+      metadata: { total_items: cart.length },
+    }).catch(() => {});
     setCart([]);
     setDismissedIds(new Set());
+    clearSessionEvents(sessionId).catch(() => {});
   };
 
   // Handle accepting a complementary recommendation
   const handleAcceptRecommendation = (rec: RecommendationItem) => {
+    recordSessionEvent({
+      session_id: sessionId,
+      event_type: 'recommendation_accepted',
+      product_id: rec.product_id,
+      shopping_context: shoppingContext,
+    }).catch(() => {});
+
     const productObj = products.find((p) => p.id === rec.product_id) || {
       id: rec.product_id,
       name: rec.name,
@@ -342,6 +392,15 @@ export default function App() {
 
   const handleDismissRecommendation = (productId: string) => {
     setDismissedIds((prev) => new Set([...prev, productId]));
+  };
+
+  const handleSelectShoppingContext = (ctx: string) => {
+    setShoppingContext(ctx);
+    recordSessionEvent({
+      session_id: sessionId,
+      event_type: 'context_selected',
+      shopping_context: ctx,
+    }).catch(() => {});
   };
 
   // Fast lookup of cart quantities by product id
@@ -388,7 +447,7 @@ export default function App() {
               onDismissRecommendation={handleDismissRecommendation}
               dismissedIds={dismissedIds}
               shoppingContext={shoppingContext}
-              onSelectShoppingContext={setShoppingContext}
+              onSelectShoppingContext={handleSelectShoppingContext}
               explanations={explanations}
               isAiGenerated={isAiGenerated}
               onOpenTransparency={() => setIsTransparencyOpen(true)}
