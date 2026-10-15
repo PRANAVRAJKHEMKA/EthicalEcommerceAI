@@ -4,7 +4,9 @@ import tempfile
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.app.main import app, resolve_cors_origins
 from backend.app.db.database import init_db, get_connection
 from backend.app.db.repository import CatalogRepository
 from backend.scripts.seed_catalog import seed_catalog, SAMPLE_PRODUCTS
@@ -111,6 +113,65 @@ class TestFoundationAndHealth(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("access-control-allow-origin"), "http://localhost:5173")
         self.assertEqual(response.headers.get("access-control-allow-credentials"), "true")
+
+    def test_cors_preflight_unallowed_origin_rejected(self):
+        """Verifies CORS preflight from unallowed origin does NOT return allow-origin header."""
+        response = self.client.options(
+            "/api/v1/catalog",
+            headers={
+                "Origin": "https://unauthorized-attacker.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        self.assertIsNone(response.headers.get("access-control-allow-origin"))
+
+    def test_production_wildcard_cors_rejected(self):
+        """Verifies wildcard '*' in production mode raises RuntimeError preventing insecure startup."""
+        with self.assertRaises(RuntimeError) as ctx:
+            resolve_cors_origins("*", environment="production")
+        self.assertIn("Wildcard '*' origin is prohibited in production", str(ctx.exception))
+
+        with self.assertRaises(RuntimeError) as ctx2:
+            resolve_cors_origins("https://faircart.onrender.com, *", environment="production")
+        self.assertIn("Wildcard '*' origin is prohibited in production", str(ctx2.exception))
+
+        with self.assertRaises(RuntimeError) as ctx3:
+            resolve_cors_origins("*", environment="prod")
+        self.assertIn("Wildcard '*' origin is prohibited in production", str(ctx3.exception))
+
+        with self.assertRaises(RuntimeError) as ctx4:
+            resolve_cors_origins("", environment="production")
+        self.assertIn("CORS_ORIGINS cannot be empty in production", str(ctx4.exception))
+
+    def test_explicit_origin_normalization_and_functionality(self):
+        """Verifies explicit origins are trimmed, trailing slashes removed, and deduplicated."""
+        origins = resolve_cors_origins(
+            "https://faircart.onrender.com/,  https://store.example.com  , https://faircart.onrender.com",
+            environment="production",
+        )
+        self.assertEqual(origins, ["https://faircart.onrender.com", "https://store.example.com"])
+
+        # Local development defaults when omitted
+        dev_origins = resolve_cors_origins("", environment="development")
+        self.assertIn("http://localhost:5173", dev_origins)
+        self.assertIn("http://127.0.0.1:5173", dev_origins)
+
+    def test_development_wildcard_cors_rejected(self):
+        """Verifies wildcard '*' is rejected even in development with ValueError rather than silent fallback."""
+        with self.assertRaises(ValueError) as ctx:
+            resolve_cors_origins("*", environment="development")
+        self.assertIn("Wildcard '*' origin cannot be used when allow_credentials=True", str(ctx.exception))
+
+    def test_zero_silent_fallback_to_wildcard(self):
+        """Verifies that CORS middleware never configures wildcard allow_origins with credentials enabled."""
+        # Check active FastAPI app middleware configuration
+        cors_middlewares = [m for m in app.user_middleware if m.cls == CORSMiddleware]
+        self.assertTrue(len(cors_middlewares) > 0, "CORSMiddleware must be present on app")
+        kwargs = cors_middlewares[0].kwargs
+        self.assertTrue(kwargs.get("allow_credentials"), "allow_credentials must remain True")
+        configured_origins = kwargs.get("allow_origins", [])
+        self.assertNotIn("*", configured_origins, "Configured origins must never contain wildcard '*'")
+        self.assertNotEqual(configured_origins, ["*"], "Configured origins must never fall back to ['*']")
 
     def test_merchant_settings_endpoint(self):
         """Verifies GET and POST /api/v1/settings for merchant margin floor and discount cap."""

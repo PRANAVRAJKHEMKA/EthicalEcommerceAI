@@ -105,15 +105,16 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **7** | **Project Description & Story** | Devpost Submission Form Fields | Comprehensive factual summary and technical outline prepared in Section 5.2. Personal responses must be submitted in learner's own words. | **NEEDS REVIEW** | **Learner Action** (Fill Devpost text fields) |
 | **8** | **Skill Pack Usage Explanation** | Devpost Required Text Field | `skills-lock.json` tracks all 6 skills from `challengepost/learn-ai-basics` (committed at `957c0fe`). 6-stage workflow documented. | **PASS** | Automated / Verified |
 | **9** | **Age-of-Majority Confirmation** | Devpost Required Checkbox | Mandatory legal eligibility confirmation checkbox on Devpost form. Must be confirmed personally by learner. | **NEEDS REVIEW** | **Learner Action** (Check confirmation box) |
-| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **135 / 135 unit tests pass** in 35.4s (0 failures, 0 errors). Frontend builds cleanly in 7.38s. Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
+| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **141 / 141 unit tests pass** in 31.7s (0 failures, 0 errors). Frontend builds cleanly in 3.5s. Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
 
 ---
 
 ## 5.1 Submitter Action Guide (Separation of Responsibilities)
 
 ### A. Completed & Verified by Agent (Zero Further Coding Needed)
-- [x] **Code Complete:** 135 automated backend tests pass; frontend TypeScript compiles cleanly.
+- [x] **Code Complete:** 141 automated backend tests pass; frontend TypeScript compiles cleanly.
 - [x] **Production Container:** Multi-stage `Dockerfile` with health probe and dynamic `$PORT`.
+- [x] **CORS Security Guardrail:** Strict production startup failure on wildcard `*` with credentials enabled (`resolve_cors_origins`).
 - [x] **Database Durability:** Dual SQLite / Neon PostgreSQL support with strict production startup failure (no silent fallback).
 - [x] **Credential Masking:** Connection strings scrubbed in logs (`mask_db_url`).
 - [x] **Security Hardening:** Redacted demo persona metadata, whitelisted rate-limited demo login, isolated order history, zero merchant admin escalation.

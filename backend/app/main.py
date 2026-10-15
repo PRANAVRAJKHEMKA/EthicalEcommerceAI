@@ -77,18 +77,78 @@ app = FastAPI(
 
 logger = logging.getLogger("faircart.api")
 
+def resolve_cors_origins(raw_origins: str | list[str] | None, environment: str = "development") -> list[str]:
+    """Parse, normalize, and enforce strict security guardrails on CORS origins.
+
+    Security & CORS Protocol Guardrail:
+    Because FairCart AI uses `allow_credentials=True` for HttpOnly session cookies (`faircart_session`),
+    browsers strictly reject any response having `Access-Control-Allow-Origin: *` under the W3C Fetch standard.
+    Furthermore, exposing credentials to wildcard origins is an insecure practice.
+
+    Rules enforced:
+    1. In production ('production' or 'prod'):
+       - Wildcard '*' is strictly prohibited and immediately raises RuntimeError.
+       - Empty origins configuration is strictly prohibited and immediately raises RuntimeError.
+       - Explicit trusted origins (e.g., 'https://faircart.onrender.com') must be provided.
+    2. In non-production (e.g. 'development', 'test'):
+       - Wildcard '*' is rejected with ValueError to prevent silent fallback to broken credentials.
+       - If origins are omitted or empty, defaults safely to explicit local development origins.
+    3. Normalization:
+       - Trims whitespace and strips trailing slashes from HTTP/HTTPS URLs to match browser Origin headers.
+       - Deduplicates origins while preserving order.
+       - Never returns ['*'] under any condition when credentials are required.
+    """
+    if raw_origins is None:
+        raw_list: list[str] = []
+    elif isinstance(raw_origins, str):
+        raw_list = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    elif isinstance(raw_origins, (list, tuple, set)):
+        raw_list = [str(o).strip() for o in raw_origins if str(o).strip()]
+    else:
+        raw_list = [str(raw_origins).strip()]
+
+    is_prod = (environment or "").strip().lower() in ("production", "prod")
+    has_wildcard = any(o == "*" for o in raw_list)
+
+    if is_prod:
+        if has_wildcard:
+            raise RuntimeError(
+                "CORS production security violation: Wildcard '*' origin is prohibited in production "
+                "when allow_credentials=True. Browsers reject credentialed requests with wildcard origins, "
+                "and wildcard credentials expose session cookies to arbitrary domains. "
+                "Configure explicit trusted frontend origins in CORS_ORIGINS (e.g., 'https://faircart.onrender.com')."
+            )
+        if not raw_list:
+            raise RuntimeError(
+                "CORS production configuration error: CORS_ORIGINS cannot be empty in production. "
+                "Explicit trusted frontend origins must be specified."
+            )
+    else:
+        if has_wildcard:
+            raise ValueError(
+                "Invalid CORS configuration: Wildcard '*' origin cannot be used when allow_credentials=True. "
+                "Browsers reject credentialed requests with wildcard CORS origins. "
+                "Specify explicit local development origins (e.g., 'http://localhost:5173')."
+            )
+
+    normalized: list[str] = []
+    for origin in raw_list:
+        clean = origin.rstrip("/") if origin.startswith(("http://", "https://")) else origin
+        if clean and clean not in normalized:
+            normalized.append(clean)
+
+    if not normalized and not is_prod:
+        normalized = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+
+    return normalized
+
 # Parse and configure production-safe CORS origins
-# Note: Because allow_credentials=True is required for HttpOnly session cookies,
-# production deployments must explicitly specify trusted frontend origins rather than wildcard '*'.
-cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
-if "*" in cors_origins:
-    if settings.ENVIRONMENT.lower() in ("production", "prod"):
-        logger.warning(
-            "CORS_ORIGINS contains wildcard '*' in production mode while allow_credentials=True. "
-            "Browsers reject credentialed requests with wildcard origins per CORS security standards. "
-            "Explicit trusted frontend origins should be configured."
-        )
-    cors_origins = ["*"]
+cors_origins = resolve_cors_origins(settings.CORS_ORIGINS, settings.ENVIRONMENT)
 
 app.add_middleware(
     CORSMiddleware,

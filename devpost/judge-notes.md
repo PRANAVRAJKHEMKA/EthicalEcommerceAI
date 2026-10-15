@@ -1112,6 +1112,16 @@ OK (131/131 tests passing, 0 failures, 0 errors)
 - Forensic repository inspection confirmed `skills-lock.json` has tracked all 6 official skills from `challengepost/learn-ai-basics` since Milestone 1 (commit `957c0fe`).
 - All 5 planning and visualization artifacts (`scope.md`, `prd.md`, `spec.md`, `checklist.md`, `app-map.html`) exist in `devpost/` with approved frontmatter and match the implemented codebase.
 
+### 10.4 Step 2B: Strict Production CORS Guardrail & Credential Protection
+- **The Problem:** In `backend/app/main.py`, wildcard CORS origins (`*`) logged a warning in production mode but still assigned `cors_origins = ["*"]`. Under the W3C Fetch specification, browsers reject any credentialed request (`allow_credentials=True` for session cookies `faircart_session`) matching a wildcard origin. Furthermore, accepting wildcard origins alongside credentials poses a severe security risk.
+- **The Solution:**
+  1. **Strict Startup Failure in Production:** Defined `resolve_cors_origins(raw_origins, environment)` in `backend/app/main.py`. In production (`ENVIRONMENT=production` or `prod`), any wildcard `*` or empty origin string immediately raises `RuntimeError`, halting application startup with an actionable error message rather than silently continuing with broken/insecure credentials.
+  2. **Development Wildcard Rejection:** In development environments, wildcard origins are rejected with `ValueError` rather than falling back to `["*"]`.
+  3. **Origin Normalization:** Parses comma-separated origin strings, trims whitespace, removes trailing slashes from HTTP/HTTPS URLs (so `https://store.example.com/` matches the browser `Origin: https://store.example.com`), and deduplicates entries.
+  4. **Credential Integrity Uncompromised:** `allow_credentials=True` remains strictly enabled to protect HttpOnly session cookies.
+  5. **Automated Verification:** Added 6 new unit tests in `test_foundation.py` verifying production wildcard rejection, explicit origin normalization, development wildcard rejection, unauthorized origin preflight rejection, and verifying that the active FastAPI middleware configuration has zero silent fallback to `["*"]`. Test baseline increased from 135 to 141 passing tests (0 failures, 0 errors in 31.7s).
+
+
 
 
 

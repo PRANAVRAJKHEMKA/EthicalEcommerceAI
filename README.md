@@ -108,7 +108,7 @@ npm run dev
 
 ### 3. Run Automated Tests
 ```bash
-# Execute the full backend test suite (135 tests passing at Milestone 6D release checkpoint)
+# Execute the full backend test suite (141 tests passing at Milestone 6D release checkpoint)
 python -m unittest discover -s backend/tests -p "test_*.py"
 
 # Verify frontend production build
