@@ -995,8 +995,87 @@ Building FairCart AI through the Devpost Learn framework reinforced the value of
 - React 19 & TypeScript
 - Google Gemini 2.5 Flash
 - scikit-learn & NumPy
-- SQLite (WAL Mode)
+- SQLite (WAL Mode) & Neon Serverless PostgreSQL (Dual Drivers)
 - Vite & Tailwind CSS
 - Docker (Multi-Stage Container)
+
+---
+
+## 9. Milestone 6C: Security Hardening, Public Deployment & Devpost Submission Readiness Audit
+
+> **Checkpoint:** Milestone 6C Release Candidate  
+> **Verification Date & Time:** October 15, 2026, 23:05 IST  
+> **Automated Backend Tests:** **131 / 131 tests passing** (0 failures, 0 errors in 89.5s)  
+> **Frontend Production Build:** Built cleanly in 8.62s (0 type errors, 99.55 kB gzip JS)  
+> **Open Source License:** Verified MIT License ([`LICENSE`](../LICENSE))  
+> **Documentation:** Complete production [`README.md`](../README.md) and [`devpost/submission-readiness.md`](submission-readiness.md)
+
+### 9.1 Security Audit & Credential Hygiene Remediation
+1. **Demo Credential Redaction:**
+   - Modified `GET /api/v1/auth/demo-personas` to return strictly public persona metadata (`id`, `username`, `display_name`, `tag`, `persona_description`).
+   - Removed `.local/demo-credentials.local.md` file reading entirely from the API response layer. Plaintext passwords, hashes, and session tokens are never returned.
+2. **Dedicated Whitelisted Demo Authentication:**
+   - Implemented `POST /api/v1/auth/demo-login` taking payload `{"persona": "demo_gamer"}`.
+   - Enforces a strict whitelist: `{"demo_gamer", "demo_student", "demo_creator", "demo_traveler", "demo_office"}`. Rejects all arbitrary usernames with `HTTP 400 Bad Request`.
+   - Protected by sliding-window rate limiting (max 15 requests per minute per IP) returning `HTTP 429 Too Many Requests`.
+   - Guaranteed zero merchant-administrative privileges.
+3. **Session Security & Transport:**
+   - Standardized on secure HttpOnly cookies (`faircart_session`) with `SameSite=Lax` and `Secure=True` in production HTTPS as the primary security layer against XSS token harvesting.
+   - `extract_session_token` prioritizes HttpOnly cookies, followed by standard `Authorization: Bearer <token>` for API evaluation.
+   - Explicit session termination in `POST /api/v1/auth/logout` deletes server session records and clears client cookies.
+4. **Merchant Administrative Guardrail Defense-in-Depth:**
+   - In `POST /api/v1/settings`: explicitly detects customer session tokens and rejects with `HTTP 403 Forbidden` ("Customer session tokens cannot be used to modify merchant policies").
+   - Requires independent merchant `ADMIN_TOKEN` when configured; blocks unauthenticated modifications in production.
+5. **Build Context & Repository Secret Hygiene:**
+   - Updated `.dockerignore` and `.gitignore` to strictly exclude `.local/`, `*.local.md`, `.env*`, and `devpost/learner-profile.md`.
+   - Scanned full Git history: zero committed API keys (`AIza...`), zero credentials, zero `.db` files.
+
+### 9.2 Persistence Architecture: Dual-Driver Engine (SQLite + Neon PostgreSQL)
+- **Zero-Cost Constraint:** No paid compute, no paid database plans, no credit card required.
+- **Dual Runtimes:**
+  * **SQLite (Default):** Zero configuration. Auto-seeded on startup with 32 curated products, 980 association rules, 5 demo accounts, and 15 itemized past orders.
+  * **Neon Serverless PostgreSQL (Option B):** Connected via `DATABASE_URL=postgresql://...`. Translates SQLite dialect (`?` placeholders to `%s`, `INSERT OR REPLACE` to `ON CONFLICT DO UPDATE`, `INSERT OR IGNORE` to `ON CONFLICT DO NOTHING`).
+- **Restart & Failure Resilience:**
+  * Verified data survival across simulated restarts in `test_database_persistence.py`.
+  * Verified graceful fallback to local SQLite when PostgreSQL is unreachable (`test_unreachable_postgres_url_falls_back_gracefully_to_sqlite`).
+
+### 9.3 Devpost Deliverables Audit Summary
+
+| Deliverable | Path | Status | Verification Note |
+| :--- | :--- | :--- | :--- |
+| **Scope Document** | `devpost/scope.md` | **PASS** | Approved frontmatter; defines Unique Kernel and Margin Invariants. |
+| **Product Requirements** | `devpost/prd.md` | **PASS** | Approved frontmatter; details Shopper & Merchant journeys and features. |
+| **Technical Blueprint** | `devpost/spec.md` | **PASS** | Approved frontmatter; specifies 10-stage ranking and decoupled Gemini API. |
+| **Build Checklist** | `devpost/checklist.md` | **PASS** | Tracks all 8 build slices with git commit checkpoints. |
+| **App Map** | `devpost/app-map.html` | **PASS** | 340 lines standalone interactive HTML route & component visualizer. |
+| **Deployment Architecture** | `devpost/deployment-and-persistence.md` | **PASS** | Specifies zero-cost cloud containerization and persistence models. |
+| **Submission Audit** | `devpost/submission-readiness.md` | **PASS** | Complete forensic audit against Devpost Build With AI: Basics rules. |
+| **README** | `README.md` | **PASS** | Full architectural overview, quickstart, demo guide, and container specs. |
+| **Open Source License** | `LICENSE` | **PASS** | Permissive MIT License in root. |
+| **Protected Files** | `devpost/learner-profile.md`, `.local/` | **PROTECTED** | Strictly excluded from Git and Docker images. |
+
+### 9.4 Verified Test Suite Results (Milestone 6C)
+
+```text
+Ran 131 tests in 89.530s
+
+OK (131/131 tests passing, 0 failures, 0 errors)
+- test_demo_auth.py (12 tests): Redacted credentials, 5 demo logins, 400 rejection, 429 rate limit, 403 admin isolation.
+- test_database_persistence.py (8 tests): SQL dialect translation, DictRowCompat, restart persistence, connection fallback.
+- test_account_order_history.py (4 tests): 15 synthetic orders, cross-account 404, simulated checkout persistence.
+- test_personalized_recommendations.py (3 tests): Persona divergence (Gamer vs Creator), zero guest leakage.
+- test_hover_reliability.py (3 tests): 700ms dwell threshold, touch filtering, internal child protection.
+- test_context_aware_engine.py (17 tests): Intent filtering, multi-item bundles, margin floor enforcement.
+- test_decision_engine.py (16 tests): Invariant tests, quote accuracy, sub-25ms response SLA.
+- test_empty_basket_recommendations.py (14 tests): Candidate provenance, zero unearned discounts on empty carts.
+- test_simulation_engine.py (11 tests): 3-policy simulation comparator, Common Random Numbers reproducibility.
+- test_foundation.py (9 tests): Operational health probe, SQLite catalog schema integrity.
+- test_associations_math.py (8 tests): Apriori support, Laplace confidence, bounded lift.
+- test_explanation_api.py (7 tests): Gemini dual-mode, 3.5s timeout, deterministic offline fallback.
+- test_catalog_api.py (6 tests): Catalog endpoint, product schemas, CORS headers.
+- test_frequency_aware_signals.py (7 tests): Interaction frequency signals, exponential time decay.
+- test_hybrid_ml_recommender.py (6 tests): HistGBM ranking, MMR diversity reranking.
+```
+
 
 

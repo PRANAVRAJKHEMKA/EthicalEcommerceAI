@@ -16,3 +16,10 @@ agent/
 .vscode/
 .idea/
 *.log
+.local/
+*.local.md
+.env
+.env.*
+devpost/learner-profile.md
+devpost/learner-profile*
+

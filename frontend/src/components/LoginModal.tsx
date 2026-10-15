@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Lock, User, Eye, EyeOff, ShieldCheck, AlertCircle, Sparkles, Loader2 } from 'lucide-react';
+import { X, Lock, User, Eye, EyeOff, ShieldCheck, AlertCircle, Sparkles, Loader2, ArrowRight } from 'lucide-react';
 import { UserProfile, DemoPersona } from '../types.ts';
-import { loginUser, fetchDemoPersonas } from '../api.ts';
+import { loginUser, demoLoginUser, fetchDemoPersonas } from '../api.ts';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -25,15 +25,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginModalProps)
         .then((data) => {
           setPersonas(data);
           if (data.length > 0 && !username) {
-            // Default to the first persona (Gamer)
             const first = data[0];
             setSelectedPersona(first);
             setUsername(first.username);
-            setPassword(first.demo_password || '');
           }
         })
         .catch(() => {
-          // If demo-personas endpoint fails, fallback to standard demo accounts
+          // If demo-personas endpoint fails, fallback to standard demo accounts metadata
           setPersonas([
             { id: '1', username: 'demo_gamer', display_name: 'Alex Mercer', tag: 'Gamer', persona_description: 'Competitive gaming and esports peripherals enthusiast' },
             { id: '2', username: 'demo_student', display_name: 'Maya Lin', tag: 'Student', persona_description: 'Compact study nook and eye comfort researcher' },
@@ -50,8 +48,21 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginModalProps)
   const handleSelectPersona = (p: DemoPersona) => {
     setSelectedPersona(p);
     setUsername(p.username);
-    setPassword(p.demo_password || '');
     setErrorMessage(null);
+  };
+
+  const handleDemoSignIn = async (personaUsername: string) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await demoLoginUser(personaUsername);
+      onLoginSuccess(response.user);
+      onClose();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Demo authentication failed.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -146,10 +157,39 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginModalProps)
             </div>
 
             {selectedPersona && (
-              <p className="mt-2.5 text-[11px] text-slate-600 italic border-t border-slate-200 pt-2">
-                &ldquo;{selectedPersona.persona_description}&rdquo;
-              </p>
+              <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-col gap-2">
+                <p className="text-[11px] text-slate-600 italic">
+                  &ldquo;{selectedPersona.persona_description}&rdquo;
+                </p>
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => handleDemoSignIn(selectedPersona.username)}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-sm transition-all text-xs disabled:opacity-60 cursor-pointer"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Authenticating demo persona...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Quick Demo Sign-In as {selectedPersona.display_name}</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </button>
+              </div>
             )}
+          </div>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase">
+              <span className="bg-white px-2 text-slate-400 font-medium">Or Sign In with Password</span>
+            </div>
           </div>
 
           {/* Error Message */}

@@ -102,7 +102,6 @@ export interface DemoPersona {
   display_name: string;
   tag: string;
   persona_description: string;
-  demo_password?: string;
 }
 
 export interface RecommendationItem {

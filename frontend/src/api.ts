@@ -50,7 +50,6 @@ function getAuthHeaders(): Record<string, string> {
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
-    headers['X-Session-Token'] = token;
   }
   return headers;
 }
@@ -226,6 +225,28 @@ export async function fetchDemoPersonas(): Promise<DemoPersona[]> {
     throw new Error(`Failed to fetch demo personas (${res.status})`);
   }
   return res.json();
+}
+
+export async function demoLoginUser(persona: string): Promise<LoginResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/demo-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ persona }),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Demo login failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {
+      // fallback
+    }
+    throw new Error(msg);
+  }
+  const data: LoginResponse = await res.json();
+  setStoredSessionToken(data.session_token);
+  return data;
 }
 
 export async function loginUser(credentials: LoginRequest): Promise<LoginResponse> {

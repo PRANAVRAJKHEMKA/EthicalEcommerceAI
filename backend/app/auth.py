@@ -17,6 +17,39 @@ from backend.app.db.repository import CatalogRepository, UserEntity
 
 ph = PasswordHasher()
 
+# Allowed synthetic demo accounts for one-click evaluation login
+ALLOWED_DEMO_PERSONAS = {
+    "demo_gamer",
+    "demo_student",
+    "demo_creator",
+    "demo_traveler",
+    "demo_office",
+}
+
+# Sliding-window rate limiter for demo login attempts (max 15 attempts per 60s per client IP)
+DEMO_LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
+
+def check_demo_login_rate_limit(client_ip: str, max_requests: int = 15, window_seconds: int = 60) -> None:
+    """Enforces sliding-window rate limiting on one-click demo login attempts."""
+    now = time.time()
+    history = DEMO_LOGIN_ATTEMPTS[client_ip]
+    active = [t for t in history if now - t < window_seconds]
+    DEMO_LOGIN_ATTEMPTS[client_ip] = active
+    if len(active) >= max_requests:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Demo login rate limit reached ({max_requests} requests per minute). Please wait {window_seconds} seconds before trying again.",
+        )
+    DEMO_LOGIN_ATTEMPTS[client_ip].append(now)
+
+def clear_demo_login_limits(client_ip: str | None = None) -> None:
+    """Clears demo login rate limits for testing isolation."""
+    if client_ip:
+        if client_ip in DEMO_LOGIN_ATTEMPTS:
+            del DEMO_LOGIN_ATTEMPTS[client_ip]
+    else:
+        DEMO_LOGIN_ATTEMPTS.clear()
+
 # Sliding-window rate limiter for failed login attempts (max 5 failures per 60s per IP/username)
 FAILED_LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
 
@@ -54,23 +87,23 @@ def verify_password(password_hash: str, password: str) -> bool:
         return False
 
 def extract_session_token(request: Request) -> str | None:
-    """Extracts session token from Authorization header, X-Session-Token header, or HttpOnly cookie."""
-    # 1. Bearer Token in Authorization header
+    """Extracts session token from HttpOnly cookie, Authorization header, or X-Session-Token header."""
+    # 1. HttpOnly cookie (primary for production same-origin SPA)
+    cookie_token = request.cookies.get("faircart_session", "").strip()
+    if cookie_token:
+        return cookie_token
+
+    # 2. Bearer Token in Authorization header (standard for API clients and automated tests)
     auth_header = request.headers.get("authorization", "")
     if auth_header.lower().startswith("bearer "):
         token = auth_header[7:].strip()
         if token:
             return token
 
-    # 2. X-Session-Token custom header
+    # 3. X-Session-Token custom header (legacy backwards compatibility)
     session_header = request.headers.get("x-session-token", "").strip()
     if session_header:
         return session_header
-
-    # 3. HttpOnly cookie
-    cookie_token = request.cookies.get("faircart_session", "").strip()
-    if cookie_token:
-        return cookie_token
 
     return None
 

@@ -5,8 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
-from backend.app.config import BASE_DIR
-from backend.app.auth import clear_login_failures
+from backend.app.auth import clear_login_failures, clear_demo_login_limits
 from backend.scripts.seed_demo_accounts import seed_demo_accounts
 
 class TestDemoAuthentication(unittest.TestCase):
@@ -23,8 +22,10 @@ class TestDemoAuthentication(unittest.TestCase):
     def setUp(self):
         # Clear rate-limit state between tests to isolate behaviors
         clear_login_failures("testclient")
+        clear_demo_login_limits("testclient")
         for username in self.credentials_map.keys():
             clear_login_failures(username)
+            clear_demo_login_limits(username)
 
     def test_demo_personas_endpoint_returns_five_personas(self):
         """Verifies GET /api/v1/auth/demo-personas lists all 5 distinct personas."""
@@ -38,6 +39,19 @@ class TestDemoAuthentication(unittest.TestCase):
         for p in personas:
             self.assertTrue(p["display_name"])
             self.assertTrue(p["persona_description"])
+
+    def test_demo_personas_endpoint_never_exposes_credentials_or_secrets(self):
+        """Verifies GET /api/v1/auth/demo-personas never returns passwords, hashes, tokens, or secrets."""
+        res = self.client.get("/api/v1/auth/demo-personas")
+        self.assertEqual(res.status_code, 200)
+        personas = res.json()
+        for p in personas:
+            self.assertNotIn("demo_password", p)
+            self.assertNotIn("password", p)
+            self.assertNotIn("password_hash", p)
+            self.assertNotIn("session_token", p)
+            self.assertNotIn("token", p)
+            self.assertNotIn("secret", p)
 
     def test_all_five_personas_authenticate_successfully(self):
         """Verifies each of the 5 demo accounts can authenticate with its generated high-entropy credential."""
@@ -116,6 +130,66 @@ class TestDemoAuthentication(unittest.TestCase):
                 headers={"Authorization": f"Bearer {token}", "X-Session-Token": token},
             )
             # Must return 403 Forbidden because customer session is not merchant ADMIN_TOKEN
+            self.assertEqual(res.status_code, 403)
+        finally:
+            settings.ADMIN_TOKEN = orig_token
+
+    def test_demo_login_whitelisted_personas_succeed(self):
+        """Verifies all 5 whitelisted demo personas authenticate successfully via POST /api/v1/auth/demo-login."""
+        whitelisted = ["demo_gamer", "demo_student", "demo_creator", "demo_traveler", "demo_office"]
+        for persona in whitelisted:
+            clear_demo_login_limits("testclient")
+            client = TestClient(app)
+            res = client.post("/api/v1/auth/demo-login", json={"persona": persona})
+            self.assertEqual(res.status_code, 200, f"Demo login failed for {persona}")
+            data = res.json()
+            self.assertIn("session_token", data)
+            self.assertEqual(data["user"]["username"], persona)
+            self.assertIn("faircart_session", res.cookies)
+
+            # Verify session is valid via /me
+            token = data["session_token"]
+            me_res = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+            self.assertEqual(me_res.status_code, 200)
+            self.assertEqual(me_res.json()["username"], persona)
+
+    def test_demo_login_rejects_non_whitelisted_personas(self):
+        """Verifies POST /api/v1/auth/demo-login rejects any arbitrary username with HTTP 400."""
+        invalid_personas = ["admin", "root", "guest", "demo_hacker", "user123"]
+        for bad_p in invalid_personas:
+            res = self.client.post("/api/v1/auth/demo-login", json={"persona": bad_p})
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("Invalid demo persona", res.json()["detail"])
+
+    def test_demo_login_rate_limiting_triggers_429(self):
+        """Verifies demo login enforces rate limiting after 15 requests in 60s."""
+        clear_demo_login_limits("testclient")
+        for i in range(15):
+            res = self.client.post("/api/v1/auth/demo-login", json={"persona": "demo_gamer"})
+            self.assertEqual(res.status_code, 200)
+
+        # 16th request must be rate limited
+        blocked_res = self.client.post("/api/v1/auth/demo-login", json={"persona": "demo_gamer"})
+        self.assertEqual(blocked_res.status_code, 429)
+        self.assertIn("Demo login rate limit reached", blocked_res.json()["detail"])
+
+    def test_demo_login_session_cannot_access_merchant_settings(self):
+        """Verifies sessions created via demo-login have zero merchant administrative privileges."""
+        from backend.app.config import settings
+        orig_token = settings.ADMIN_TOKEN
+        try:
+            settings.ADMIN_TOKEN = "test_merchant_admin_secret_999"
+            clear_demo_login_limits("testclient")
+            client = TestClient(app)
+            login_res = client.post("/api/v1/auth/demo-login", json={"persona": "demo_traveler"})
+            token = login_res.json()["session_token"]
+
+            # Attempt to modify settings with demo-login session
+            res = client.post(
+                "/api/v1/settings",
+                json={"margin_floor": 0.05, "discount_cap": 0.50},
+                headers={"Authorization": f"Bearer {token}"},
+            )
             self.assertEqual(res.status_code, 403)
         finally:
             settings.ADMIN_TOKEN = orig_token

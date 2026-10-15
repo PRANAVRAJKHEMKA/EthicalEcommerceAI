@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_PATH: str = str(BASE_DIR / "faircart.db")
+    DATABASE_URL: str | None = None
     
     # External Services
     GEMINI_API_KEY: str | None = None

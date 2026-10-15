@@ -14,6 +14,9 @@ scikit-learn==1.9.1
 # Security & Authentication
 argon2-cffi==25.1.0
 
+# Database Persistence (PostgreSQL / Neon)
+psycopg[binary]>=3.2.0
+
 # Note: sqlite3, hashlib, and unittest are built into Python 3.12 standard library.
 # pydantic-core 2.27.2 is pinned explicitly to guarantee binary compatibility with pydantic 2.10.6 on Windows.
 

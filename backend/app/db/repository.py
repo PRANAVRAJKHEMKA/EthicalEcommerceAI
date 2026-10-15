@@ -86,8 +86,13 @@ class OrderEntity:
 class CatalogRepository:
     """Repository handling all database queries for the product catalog and merchant settings."""
 
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_path: str | None = None, database_url: str | None = None):
         self.db_path = db_path
+        self.database_url = database_url
+
+    def _get_connection(self):
+        """Creates an active database connection using the configured path or database URL."""
+        return get_connection(self.db_path, self.database_url)
 
     def _row_to_entity(self, row: sqlite3.Row) -> ProductEntity:
         """Converts an SQLite row into an immutable ProductEntity with integer cents."""
@@ -117,7 +122,7 @@ class CatalogRepository:
 
     def count_products(self) -> int:
         """Returns the total number of products in the catalog."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM products;")
@@ -132,7 +137,7 @@ class CatalogRepository:
 
     def get_all_entities(self) -> list[ProductEntity]:
         """Retrieves all products from the catalog as authoritative integer-cent ProductEntities."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM products ORDER BY id ASC;")
@@ -148,7 +153,7 @@ class CatalogRepository:
 
     def get_entity_by_id(self, product_id: str) -> ProductEntity | None:
         """Retrieves a single product by its unique ID as an authoritative ProductEntity."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM products WHERE id = ?;", (product_id,))
@@ -166,7 +171,7 @@ class CatalogRepository:
         if not product_ids:
             return []
         placeholders = ",".join("?" for _ in product_ids)
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(f"SELECT * FROM products WHERE id IN ({placeholders});", product_ids)
@@ -178,7 +183,7 @@ class CatalogRepository:
     def get_merchant_settings(self) -> dict[str, float]:
         """Retrieves merchant policy settings (margin floor, discount cap) from SQLite."""
         settings = {"margin_floor": 0.20, "discount_cap": 0.20}
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM merchant_settings;")
@@ -193,7 +198,7 @@ class CatalogRepository:
 
     def update_merchant_setting(self, key: str, value: float) -> None:
         """Updates a merchant policy setting in SQLite."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -223,7 +228,7 @@ class CatalogRepository:
         final_ts = timestamp.strip() if timestamp and timestamp.strip() else datetime.now(timezone.utc).isoformat()
         meta_str = json.dumps(metadata or {})
 
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -238,7 +243,7 @@ class CatalogRepository:
     def get_session_events(self, session_id: str, limit: int = 100) -> list[dict]:
         """Retrieves anonymous event history for a given session."""
         import json
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -266,7 +271,7 @@ class CatalogRepository:
 
     def get_session_viewed_product_ids(self, session_id: str) -> list[str]:
         """Returns distinct product IDs viewed, hovered, or interacted with in the active session."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -283,7 +288,7 @@ class CatalogRepository:
 
     def get_session_saved_cart_ids(self, session_id: str) -> list[str]:
         """Returns distinct product IDs in the session's saved cart."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -300,7 +305,7 @@ class CatalogRepository:
 
     def get_session_historical_order_ids(self, session_id: str) -> list[str]:
         """Returns distinct product IDs from completed simulated FairCart purchases for this session."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -317,7 +322,7 @@ class CatalogRepository:
 
     def clear_session_events(self, session_id: str) -> int:
         """Deletes all anonymous interaction events for a session upon shopper reset."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM session_events WHERE session_id = ?;", (session_id,))
@@ -339,7 +344,7 @@ class CatalogRepository:
         execution_latency_ms: float,
     ) -> None:
         """Persists a 3-policy simulation comparator run to SQLite."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -356,7 +361,7 @@ class CatalogRepository:
     def get_latest_simulation_run(self) -> dict | None:
         """Retrieves the most recent simulation run from SQLite."""
         import json
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -396,7 +401,7 @@ class CatalogRepository:
     ) -> UserEntity:
         """Creates a demonstration user with hashed credentials."""
         now = created_at or datetime.now(timezone.utc).isoformat()
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -417,7 +422,7 @@ class CatalogRepository:
 
     def get_user_by_username(self, username: str) -> UserEntity | None:
         """Retrieves a user by exact username."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users WHERE username = ?;", (username,))
@@ -437,7 +442,7 @@ class CatalogRepository:
 
     def get_user_by_id(self, user_id: str) -> UserEntity | None:
         """Retrieves a user by unique identifier."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users WHERE id = ?;", (user_id,))
@@ -457,7 +462,7 @@ class CatalogRepository:
 
     def get_all_users(self) -> list[UserEntity]:
         """Retrieves all registered demonstration users."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users ORDER BY username ASC;")
@@ -478,7 +483,7 @@ class CatalogRepository:
 
     def count_users(self) -> int:
         """Returns the total number of users."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM users;")
@@ -489,7 +494,7 @@ class CatalogRepository:
 
     def update_user_password(self, username: str, new_password_hash: str) -> bool:
         """Updates the password hash for a demonstration user."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?;", (new_password_hash, username))
@@ -501,7 +506,7 @@ class CatalogRepository:
     def create_session(self, session_token: str, user_id: str, expires_at: str) -> None:
         """Stores a server-validated session token."""
         now = datetime.now(timezone.utc).isoformat()
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -515,7 +520,7 @@ class CatalogRepository:
     def get_session(self, session_token: str) -> dict | None:
         """Retrieves an active session if not expired."""
         now = datetime.now(timezone.utc).isoformat()
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -542,7 +547,7 @@ class CatalogRepository:
 
     def delete_session(self, session_token: str) -> bool:
         """Revokes a session token."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM user_sessions WHERE session_token = ?;", (session_token,))
@@ -553,7 +558,7 @@ class CatalogRepository:
 
     def delete_user_sessions(self, user_id: str) -> int:
         """Revokes all active sessions for a user."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM user_sessions WHERE user_id = ?;", (user_id,))
@@ -579,7 +584,7 @@ class CatalogRepository:
         items_json: str,
     ) -> OrderEntity:
         """Persists a new order record under a specific user account."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -604,7 +609,7 @@ class CatalogRepository:
 
     def get_orders_for_user(self, user_id: str) -> list[OrderEntity]:
         """Retrieves all past orders belonging strictly to the specified user account."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -632,7 +637,7 @@ class CatalogRepository:
 
     def get_order_by_id(self, order_id: str, user_id: str) -> OrderEntity | None:
         """Retrieves a specific order, enforcing that it belongs to the authenticated user."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM orders WHERE id = ? AND user_id = ?;", (order_id, user_id))
@@ -655,7 +660,7 @@ class CatalogRepository:
 
     def count_orders_for_user(self, user_id: str) -> int:
         """Counts orders associated with a specific user."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?;", (user_id,))
@@ -666,7 +671,7 @@ class CatalogRepository:
 
     def count_all_orders(self) -> int:
         """Counts total orders across all users."""
-        conn = get_connection(self.db_path)
+        conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM orders;")

@@ -1,23 +1,189 @@
+"""FairCart AI — Unified Database & Persistence Layer (Milestone 6C)
+
+Supports dual database runtimes:
+1. SQLite (default, zero configuration for local development and offline testing).
+2. PostgreSQL (e.g. Neon Serverless PostgreSQL for permanent, durable cloud persistence).
+Configured seamlessly via DATABASE_URL environment variable.
+"""
+
+import logging
+import re
 import sqlite3
 from pathlib import Path
+from typing import Any
+
 from backend.app.config import settings
 
-def get_connection(db_path: str | None = None) -> sqlite3.Connection:
-    """Creates and returns an active SQLite database connection with row dictionary access."""
+logger = logging.getLogger("faircart.db")
+
+
+def is_postgres(database_url: str | None = None) -> bool:
+    """Returns True if the active or specified database connection is PostgreSQL."""
+    url = database_url if database_url is not None else settings.DATABASE_URL
+    if not url:
+        return False
+    clean = url.strip().lower()
+    return clean.startswith("postgres://") or clean.startswith("postgresql://")
+
+
+def adapt_sql_for_postgres(sql: str) -> str:
+    """Translates SQLite query patterns to PostgreSQL ANSI SQL."""
+    adapted = sql.strip()
+
+    # 1. Translate INSERT OR REPLACE INTO merchant_settings
+    if "INSERT OR REPLACE INTO merchant_settings" in adapted:
+        adapted = adapted.replace("INSERT OR REPLACE INTO merchant_settings", "INSERT INTO merchant_settings")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + (
+                " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at;"
+            )
+
+    # 2. Translate INSERT OR REPLACE INTO products
+    elif "INSERT OR REPLACE INTO products" in adapted:
+        adapted = adapted.replace("INSERT OR REPLACE INTO products", "INSERT INTO products")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + (
+                " ON CONFLICT (id) DO UPDATE SET "
+                "name = EXCLUDED.name, category = EXCLUDED.category, subcategory = EXCLUDED.subcategory, "
+                "description = EXCLUDED.description, reference_price_cents = EXCLUDED.reference_price_cents, "
+                "cogs_cents = EXCLUDED.cogs_cents, inventory = EXCLUDED.inventory, "
+                "complementary_ids = EXCLUDED.complementary_ids, tags = EXCLUDED.tags, "
+                "use_cases = EXCLUDED.use_cases, image_url = EXCLUDED.image_url;"
+            )
+
+    # 3. Translate general INSERT OR IGNORE INTO <table>
+    elif "INSERT OR IGNORE INTO" in adapted:
+        adapted = adapted.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + " ON CONFLICT DO NOTHING;"
+
+    # 4. Translate SQLite datetime('now') to PostgreSQL CURRENT_TIMESTAMP
+    adapted = adapted.replace("datetime('now')", "CURRENT_TIMESTAMP")
+
+    # 5. Parameter placeholders: SQLite ? -> PostgreSQL %s
+    adapted = adapted.replace("?", "%s")
+
+    return adapted
+
+
+class DictRowCompat(dict):
+    """Provides dual key and integer index access compatible with sqlite3.Row."""
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+
+class PostgresCursorWrapper:
+    """Wraps a psycopg Cursor to match sqlite3.Cursor interface and translate SQLite dialect."""
+
+    def __init__(self, raw_cursor):
+        self._cur = raw_cursor
+
+    def execute(self, query: str, params: Any = None):
+        adapted = adapt_sql_for_postgres(query)
+        if params is not None:
+            if isinstance(params, tuple):
+                params = list(params)
+            return self._cur.execute(adapted, params)
+        return self._cur.execute(adapted)
+
+    def executemany(self, query: str, seq_of_params):
+        adapted = adapt_sql_for_postgres(query)
+        return self._cur.executemany(adapted, seq_of_params)
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        return DictRowCompat(row) if row is not None else None
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        return [DictRowCompat(r) for r in rows] if rows else []
+
+    def fetchmany(self, size=None):
+        rows = self._cur.fetchmany(size) if size else self._cur.fetchmany()
+        return [DictRowCompat(r) for r in rows] if rows else []
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    def close(self):
+        return self._cur.close()
+
+
+class PostgresConnectionWrapper:
+    """Wraps a psycopg Connection to provide sqlite3-like dictionary row access and transaction management."""
+
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+
+    def cursor(self):
+        return PostgresCursorWrapper(self._conn.cursor())
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        return self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        else:
+            self.commit()
+
+
+def get_connection(db_path: str | None = None, database_url: str | None = None) -> Any:
+    """Creates and returns an active database connection.
+    
+    If database_url (or settings.DATABASE_URL) is a valid PostgreSQL URI, connects via
+    psycopg to PostgreSQL (e.g. Neon Serverless Postgres). Otherwise, returns a standard
+    SQLite connection with Row dictionary mapping.
+    """
+    target_url = database_url if database_url is not None else settings.DATABASE_URL
+    if is_postgres(target_url):
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            pg_url = target_url.strip()
+            if pg_url.startswith("postgres://"):
+                pg_url = "postgresql://" + pg_url[11:]
+
+            conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=2)
+            return PostgresConnectionWrapper(conn)
+        except Exception as e:
+            logger.warning(
+                f"PostgreSQL connection to '{target_url[:25]}...' failed: {e}. "
+                f"Falling back gracefully to local SQLite database."
+            )
+
+    # SQLite fallback / default
     target_path = db_path or settings.DATABASE_PATH
+    Path(target_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(target_path)
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db(db_path: str | None = None) -> None:
-    """Initializes the database schema if tables do not exist and applies migrations."""
-    target_path = db_path or settings.DATABASE_PATH
-    Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+
+def init_db(db_path: str | None = None, database_url: str | None = None) -> None:
+    """Initializes the database schema if tables do not exist and applies migrations.
     
-    conn = get_connection(target_path)
+    Compatible with both SQLite and PostgreSQL.
+    """
+    target_url = database_url if database_url is not None else settings.DATABASE_URL
+    conn = get_connection(db_path, target_url)
     try:
         cursor = conn.cursor()
-        
+
         # Products table: stores catalog with integer cents and rich contextual attributes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS products (
@@ -36,16 +202,17 @@ def init_db(db_path: str | None = None) -> None:
             );
         """)
 
-        # Migration helper: add new columns if upgrading from earlier schema
-        cursor.execute("PRAGMA table_info(products);")
-        columns = [row["name"] for row in cursor.fetchall()]
-        if "subcategory" not in columns:
-            cursor.execute("ALTER TABLE products ADD COLUMN subcategory TEXT NOT NULL DEFAULT '';")
-        if "tags" not in columns:
-            cursor.execute("ALTER TABLE products ADD COLUMN tags TEXT NOT NULL DEFAULT '';")
-        if "use_cases" not in columns:
-            cursor.execute("ALTER TABLE products ADD COLUMN use_cases TEXT NOT NULL DEFAULT '';")
-        
+        # Migration helper for earlier SQLite schemas
+        if not is_postgres(target_url):
+            cursor.execute("PRAGMA table_info(products);")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "subcategory" not in columns:
+                cursor.execute("ALTER TABLE products ADD COLUMN subcategory TEXT NOT NULL DEFAULT '';")
+            if "tags" not in columns:
+                cursor.execute("ALTER TABLE products ADD COLUMN tags TEXT NOT NULL DEFAULT '';")
+            if "use_cases" not in columns:
+                cursor.execute("ALTER TABLE products ADD COLUMN use_cases TEXT NOT NULL DEFAULT '';")
+
         # Decision audit logs: tracks every session recommendation & offer decision
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS decision_logs (
@@ -72,7 +239,7 @@ def init_db(db_path: str | None = None) -> None:
                 updated_at TEXT NOT NULL
             );
         """)
-        
+
         # Default merchant settings if not set
         cursor.execute("""
             INSERT OR IGNORE INTO merchant_settings (key, value, updated_at)
@@ -111,7 +278,7 @@ def init_db(db_path: str | None = None) -> None:
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_assoc_antecedent ON basket_association_rules(antecedent_ids);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_assoc_consequent ON basket_association_rules(consequent_id);")
-        
+
         # Indexes for fast candidate filtering
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_use_cases ON products(use_cases);")
@@ -172,9 +339,11 @@ def init_db(db_path: str | None = None) -> None:
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);")
+
         conn.commit()
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     init_db()

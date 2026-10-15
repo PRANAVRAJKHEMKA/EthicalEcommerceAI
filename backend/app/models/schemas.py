@@ -235,6 +235,18 @@ class UserProfile(BaseModel):
     persona_description: str
     created_at: str
 
+class DemoPersonaPublic(BaseModel):
+    """Public metadata for demonstration evaluation personas."""
+    id: str
+    username: str
+    display_name: str
+    tag: str
+    persona_description: str
+
+class DemoLoginRequest(BaseModel):
+    """Payload for whitelisted one-click demo persona authentication."""
+    persona: str = Field(..., description="Whitelisted demo persona username (e.g. demo_gamer)")
+
 class LoginRequest(BaseModel):
     """Login credentials submission."""
     username: str

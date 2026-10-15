@@ -1,5 +1,7 @@
 # Devpost Learn private learning context
 /devpost/learner-profile.md
+/devpost/learner-profile*
+
 
 # Secrets and credentials
 .env

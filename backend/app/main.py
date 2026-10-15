@@ -19,6 +19,8 @@ from backend.app.models.schemas import (
     CreateOrderRequest,
     DecisionRequest,
     DecisionResponse,
+    DemoLoginRequest,
+    DemoPersonaPublic,
     ExplanationRequest,
     ExplanationResponse,
     HealthResponse,
@@ -36,7 +38,9 @@ from backend.app.models.schemas import (
 )
 from backend.app.engine.simulator import EconomicSimulator
 from backend.app.auth import (
+    ALLOWED_DEMO_PERSONAS,
     attach_session_cookie,
+    check_demo_login_rate_limit,
     check_login_rate_limit,
     clear_login_failures,
     clear_session_cookie,
@@ -142,30 +146,12 @@ def create_decision(
 # DEMONSTRATION AUTHENTICATION & SESSIONS (Milestone 6B)
 # ------------------------------------------------------------------------------
 
-@app.get("/api/v1/auth/demo-personas", tags=["Authentication"])
-def get_demo_personas():
-    """Returns the 5 evaluation demo personas with role tags, metadata, and helper credentials
-    parsed from .local/demo-credentials.local.md if available locally.
-    """
-    creds_path = BASE_DIR / ".local" / "demo-credentials.local.md"
-    if not creds_path.exists():
-        creds_path = Path(".local/demo-credentials.local.md")
+@app.get("/api/v1/auth/demo-personas", response_model=list[DemoPersonaPublic], tags=["Authentication"])
+def get_demo_personas() -> list[DemoPersonaPublic]:
+    """Returns public persona metadata for the 5 evaluation demo accounts.
     
-    password_map = {}
-    if creds_path.exists():
-        try:
-            text = creds_path.read_text(encoding="utf-8")
-            for line in text.splitlines():
-                if line.strip().startswith("|") and "`" in line:
-                    parts = [p.strip() for p in line.split("|")]
-                    if len(parts) >= 5:
-                        u_match = re.search(r"`([^`]+)`", parts[2])
-                        p_match = re.search(r"`([^`]+)`", parts[3])
-                        if u_match and p_match:
-                            password_map[u_match.group(1)] = p_match.group(1)
-        except Exception:
-            pass
-
+    Zero passwords, password hashes, or session tokens are ever returned.
+    """
     repo = CatalogRepository()
     users = repo.get_all_users()
     tag_map = {
@@ -177,15 +163,61 @@ def get_demo_personas():
     }
     personas = []
     for u in users:
-        personas.append({
-            "id": u.id,
-            "username": u.username,
-            "display_name": u.display_name,
-            "tag": tag_map.get(u.username, "Customer"),
-            "persona_description": u.persona_description,
-            "demo_password": password_map.get(u.username, ""),
-        })
+        if u.username in ALLOWED_DEMO_PERSONAS:
+            personas.append(DemoPersonaPublic(
+                id=u.id,
+                username=u.username,
+                display_name=u.display_name,
+                tag=tag_map.get(u.username, "Customer"),
+                persona_description=u.persona_description,
+            ))
     return personas
+
+@app.post("/api/v1/auth/demo-login", response_model=LoginResponse, tags=["Authentication"])
+def demo_login(req: DemoLoginRequest, request: Request, response: Response) -> LoginResponse:
+    """Authenticates one of the 5 explicitly designated synthetic customer personas without exposing passwords.
+    
+    Strictly restricted to the whitelist: {demo_gamer, demo_student, demo_creator, demo_traveler, demo_office}.
+    Enforces IP rate limiting (15 requests/min) and issues a standard customer session cookie.
+    Guaranteed: zero merchant-administrative privileges.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    check_demo_login_rate_limit(client_ip)
+
+    persona_key = req.persona.strip().lower()
+    if persona_key not in ALLOWED_DEMO_PERSONAS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid demo persona '{req.persona}'. Must be one of: {sorted(ALLOWED_DEMO_PERSONAS)}",
+        )
+
+    repo = CatalogRepository()
+    user = repo.get_user_by_username(persona_key)
+    if not user:
+        # Self-heal demo accounts if needed
+        from backend.scripts.seed_demo_accounts import seed_demo_accounts
+        seed_demo_accounts()
+        user = repo.get_user_by_username(persona_key)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Demo persona '{persona_key}' is not available.",
+            )
+
+    session_token, _ = create_user_session(user.id, days=7)
+    attach_session_cookie(response, session_token)
+
+    return LoginResponse(
+        user=UserProfile(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            persona_description=user.persona_description,
+            created_at=user.created_at,
+        ),
+        session_token=session_token,
+        message=f"Authenticated as demo persona: {user.display_name}",
+    )
 
 @app.post("/api/v1/auth/login", response_model=LoginResponse, tags=["Authentication"])
 def login(login_req: LoginRequest, request: Request, response: Response) -> LoginResponse:
@@ -465,19 +497,36 @@ def update_settings(
     In environments where ADMIN_TOKEN is configured, requires a matching
     'X-Admin-Token' or 'Authorization: Bearer <token>' header.
     """
-    admin_token = settings.ADMIN_TOKEN
-    if admin_token and admin_token.strip():
-        supplied_token = x_admin_token
-        if not supplied_token and authorization:
-            parts = authorization.split()
-            if len(parts) == 2 and parts[0].lower() == "bearer":
-                supplied_token = parts[1]
-        
-        if supplied_token != admin_token.strip():
+    admin_token = settings.ADMIN_TOKEN.strip() if settings.ADMIN_TOKEN else ""
+    is_prod = settings.ENVIRONMENT.lower() == "production"
+
+    supplied_token = x_admin_token
+    if not supplied_token and authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            supplied_token = parts[1]
+
+    # Explicit isolation: verify supplied token is not a customer session token
+    if supplied_token:
+        repo = CatalogRepository()
+        if repo.get_session(supplied_token):
+            raise HTTPException(
+                status_code=403,
+                detail="Customer session tokens cannot be used to modify merchant policies.",
+            )
+
+    if admin_token:
+        if supplied_token != admin_token:
             raise HTTPException(
                 status_code=403,
                 detail="Merchant authorization required to update policy guardrails.",
             )
+    elif is_prod:
+        # In production mode, ADMIN_TOKEN must be configured and matched
+        raise HTTPException(
+            status_code=403,
+            detail="Merchant policy updates disabled: administrative token not configured.",
+        )
 
     try:
         repo = CatalogRepository()
