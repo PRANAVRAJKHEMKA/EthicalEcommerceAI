@@ -1,4 +1,4 @@
-import { ShoppingCart, ShieldCheck } from 'lucide-react';
+import { ShoppingCart, ShieldCheck, HelpCircle } from 'lucide-react';
 import { HealthStatus } from '../types.ts';
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   openCart: () => void;
   health: HealthStatus | null;
   loadingHealth: boolean;
+  onOpenTransparency?: () => void;
 }
 
 export function Header({
@@ -17,12 +18,13 @@ export function Header({
   openCart,
   health,
   loadingHealth,
+  onOpenTransparency,
 }: HeaderProps) {
   return (
     <header className="border-b border-slate-200 bg-white/95 backdrop-blur-md sticky top-0 z-40 shadow-xs">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
-        {/* Brand */}
-        <div className="flex items-center space-x-1.5 shrink-0">
+        {/* Brand & Ethical Engine Pill */}
+        <div className="flex items-center space-x-2 shrink-0">
           <button
             onClick={() => setActiveTab('store')}
             className="flex items-baseline cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded p-1 -m-1"
@@ -32,10 +34,18 @@ export function Header({
               FairCart <span className="text-indigo-600">AI</span>
             </span>
           </button>
-          <span className="hidden md:inline-flex items-center space-x-1 text-[11px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-md border border-slate-200">
-            <ShieldCheck className="w-3 h-3 text-emerald-600" />
-            <span>Ethical Engine</span>
-          </span>
+
+          {onOpenTransparency && (
+            <button
+              onClick={onOpenTransparency}
+              className="hidden md:inline-flex items-center space-x-1 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2 py-0.5 rounded-md border border-slate-200 transition-colors cursor-pointer"
+              title="Click to view How Recommendations & Offers Work"
+            >
+              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+              <span>Ethical Engine</span>
+              <HelpCircle className="w-2.5 h-2.5 text-slate-400 ml-0.5" />
+            </button>
+          )}
         </div>
 
         {/* Right Controls: Switcher + Health + Cart */}

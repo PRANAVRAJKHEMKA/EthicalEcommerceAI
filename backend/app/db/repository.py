@@ -137,14 +137,17 @@ class CatalogRepository:
 
     def get_merchant_settings(self) -> dict[str, float]:
         """Retrieves merchant policy settings (margin floor, discount cap) from SQLite."""
+        settings = {"margin_floor": 0.20, "discount_cap": 0.20}
         conn = get_connection(self.db_path)
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM merchant_settings;")
             rows = cursor.fetchall()
-            return {r["key"]: float(r["value"]) for r in rows}
+            for r in rows:
+                settings[r["key"]] = float(r["value"])
+            return settings
         except Exception:
-            return {"margin_floor": 0.20, "discount_cap": 0.20}
+            return settings
         finally:
             conn.close()
 

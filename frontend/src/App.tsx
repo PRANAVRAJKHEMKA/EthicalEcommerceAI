@@ -5,11 +5,13 @@ import {
   HealthStatus,
   DecisionResponse,
   RecommendationItem,
+  ItemExplanation,
 } from './types.ts';
-import { fetchHealth, fetchCatalog, fetchDecision } from './api.ts';
+import { fetchHealth, fetchCatalog, fetchDecision, fetchExplanation } from './api.ts';
 import { Header } from './components/Header.tsx';
 import { CartDrawer } from './components/CartDrawer.tsx';
 import { CheckoutModal } from './components/CheckoutModal.tsx';
+import { TransparencyModal } from './components/TransparencyModal.tsx';
 import { StorefrontView } from './views/StorefrontView.tsx';
 import { MerchantView } from './views/MerchantView.tsx';
 
@@ -57,10 +59,37 @@ export default function App() {
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isTransparencyOpen, setIsTransparencyOpen] = useState(false);
 
   // Decision Engine state
   const [decision, setDecision] = useState<DecisionResponse | null>(null);
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+  // AI & Deterministic Explanations state
+  const [explanations, setExplanations] = useState<Record<string, ItemExplanation>>({});
+  const [isAiGenerated, setIsAiGenerated] = useState(false);
+
+  // Dismissed recommendation IDs persisted to localStorage
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const saved = localStorage.getItem('faircart_dismissed_ids');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Save dismissedIds to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'faircart_dismissed_ids',
+        JSON.stringify(Array.from(dismissedIds))
+      );
+    } catch (e) {
+      console.error('Failed to save dismissed IDs to localStorage', e);
+    }
+  }, [dismissedIds]);
 
   // Save cart to localStorage
   useEffect(() => {
@@ -158,6 +187,72 @@ export default function App() {
       isMounted = false;
     };
   }, [cart, shoppingContext]);
+
+  // Revalidate cart bundle discounts against latest backend decision
+  // Automatically revokes discounts if prerequisite items are removed
+  useEffect(() => {
+    if (!decision) return;
+    setCart((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (item.appliedDiscountPct && item.appliedDiscountPct > 0) {
+          const offer = decision.eligible_offers_by_product_id?.[item.product.id];
+          if (!offer || !offer.is_offered) {
+            changed = true;
+            return {
+              ...item,
+              discountedPrice: undefined,
+              appliedDiscountPct: undefined,
+              appliedCondition: undefined,
+            };
+          } else if (item.discountedPrice !== offer.final_price) {
+            changed = true;
+            return {
+              ...item,
+              discountedPrice: offer.final_price,
+              appliedDiscountPct: offer.discount_percentage,
+              appliedCondition: offer.conditions,
+            };
+          }
+        }
+        return item;
+      });
+      return changed ? next : prev;
+    });
+  }, [decision]);
+
+  // Fetch AI / natural-language explanations when recommendations change
+  useEffect(() => {
+    if (!decision || decision.recommendations.length === 0) {
+      setExplanations({});
+      setIsAiGenerated(false);
+      return;
+    }
+
+    let isMounted = true;
+    const candidateIds = decision.recommendations.map((r) => r.product_id);
+    const cartIds = cart.map((i) => i.product.id);
+
+    fetchExplanation({
+      session_id: decision.session_id,
+      shopping_context: shoppingContext,
+      cart_product_ids: cartIds,
+      candidate_product_ids: candidateIds,
+    })
+      .then((data) => {
+        if (isMounted) {
+          setExplanations(data.explanations || {});
+          setIsAiGenerated(data.ai_generated || false);
+        }
+      })
+      .catch((err) => {
+        console.warn('Asynchronous explanation fetch note:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [decision, shoppingContext, cart]);
 
   // Cart operations
   const handleAddToCart = (
@@ -274,6 +369,7 @@ export default function App() {
           openCart={() => setIsCartOpen(true)}
           health={health}
           loadingHealth={loadingHealth}
+          onOpenTransparency={() => setIsTransparencyOpen(true)}
         />
 
         {/* Main Application Content */}
@@ -293,9 +389,12 @@ export default function App() {
               dismissedIds={dismissedIds}
               shoppingContext={shoppingContext}
               onSelectShoppingContext={setShoppingContext}
+              explanations={explanations}
+              isAiGenerated={isAiGenerated}
+              onOpenTransparency={() => setIsTransparencyOpen(true)}
             />
           ) : (
-            <MerchantView products={products} />
+            <MerchantView products={products} health={health} />
           )}
         </main>
       </div>
@@ -317,6 +416,8 @@ export default function App() {
         onDismissRecommendation={handleDismissRecommendation}
         dismissedIds={dismissedIds}
         basketQuote={decision?.cart_quote}
+        explanations={explanations}
+        isAiGenerated={isAiGenerated}
       />
 
       {/* Simulated Checkout Modal */}
@@ -326,6 +427,13 @@ export default function App() {
         cart={cart}
         onCompleteOrder={handleCompleteOrder}
         basketQuote={decision?.cart_quote}
+      />
+
+      {/* Transparency & AI Firewall Modal */}
+      <TransparencyModal
+        isOpen={isTransparencyOpen}
+        onClose={() => setIsTransparencyOpen(false)}
+        geminiConfigured={health?.gemini_configured ?? false}
       />
 
       {/* Footer */}

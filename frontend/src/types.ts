@@ -122,3 +122,32 @@ export interface DecisionResponse {
   fallback_applied: boolean;
   execution_latency_ms: number;
 }
+
+export interface ExplanationRequest {
+  session_id?: string;
+  shopping_context?: string;
+  cart_product_ids: string[];
+  candidate_product_ids: string[];
+}
+
+export interface ItemExplanation {
+  product_id: string;
+  explanation: string;
+  factual_signals: string[];
+  source: 'gemini' | 'deterministic_fallback';
+}
+
+export interface ExplanationResponse {
+  session_id: string;
+  shopping_context: string;
+  explanations: Record<string, ItemExplanation>;
+  ai_generated: boolean;
+  fallback_applied: boolean;
+  fallback_reason?: string | null;
+  execution_latency_ms: number;
+}
+
+export interface MerchantSettings {
+  margin_floor: number;
+  discount_cap: number;
+}

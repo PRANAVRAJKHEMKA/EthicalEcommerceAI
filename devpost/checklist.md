@@ -46,23 +46,23 @@ Build mode: learn
   Verify (mechanical): Run 26/26 backend unit tests, build frontend production bundle (`tsc -b && vite build`), verify CDP screenshots of 4 UI touchpoints.
   Commit: `Milestone 3B: Multi-recommendation, consistent pricing, and context-aware optimization`
 
-- [ ] **4. Asynchronous Gemini Copy & Transparency Modal (Milestone 3)**
-  Becomes usable: Recommendation card asynchronously enriches its copy via Gemini, with instant offline template fallback if the key is missing.
-  Why now: Delivers responsible AI transparency without blocking the critical commerce path.
-  PRD ref: `prd.md > Feature E`
-  Spec ref: `spec.md > 5.4 /explanation`, `spec.md > 6. Component 5`
-  Build: Implement `POST /api/v1/explanation` with timeout protection and template fallback; add "How offers work" modal.
-  Verify (mechanical): Test endpoint with and without `GEMINI_API_KEY`.
-  Commit: `Milestone 3: Add asynchronous Gemini explanation service and transparency disclosure`
+- [x] **4. Product Experience Refinement, Persistent State, Gemini Explanations & Recovery (Milestone 4)**
+  Becomes usable: Storefront expanded to 32 products with category-accurate photos; persistent localStorage state across refreshes (cart, intent, dismissed IDs); automatic revocation of bundle discounts when prerequisite items are removed; asynchronous Gemini explanation service (`POST /api/v1/explanation`) with attribute-grounded copy, 3.5s timeout, response caching, sub-5ms deterministic offline fallback, and strict financial immutability; full transparency disclosure modal (`TransparencyModal.tsx`); interactive Merchant Console with active policy sliders (`margin_floor`, `discount_cap`) persisted to SQLite; uvicorn reload isolation (`--reload-dir backend`) and explicit binary dependency pinning (`pydantic-core==2.27.2`).
+  Why now: Delivers responsible AI transparency without blocking the critical commerce path, fixes runtime reload instabilities, guarantees reliable cross-session state, and equips the merchant console with active policy guardrails.
+  PRD ref: `prd.md > Feature E, F`, `prd.md > View 2`
+  Spec ref: `spec.md > 5.4 /explanation`, `spec.md > 5.6 /settings`, `spec.md > 6. Component 5 & 8`
+  Build: Seed 32 catalog items; implement `GeminiExplanationService`; mount `POST /api/v1/explanation` and `GET/POST /api/v1/settings`; create `TransparencyModal.tsx`; update `MerchantView.tsx` with active sliders; wire discount revocation in `App.tsx`; isolate Uvicorn file watcher; pin `pydantic-core==2.27.2`.
+  Verify (mechanical): Run 33/33 backend unit tests, build frontend production bundle (`tsc -b && vite build`), test live endpoints (`/health`, `/catalog`, `/explanation`, `/settings`), verify live browser behavior with 5 Edge CDP screenshots.
+  Commit: `Milestone 4: Product experience refinement, persistent state, Gemini explanations, and runtime recovery`
 
-- [ ] **5. Merchant Console & 3-Policy Simulation (Milestone 4)**
-  Becomes usable: Merchant can adjust margin floors in real time, view live decision audit logs, and run a 1,000-session 3-policy simulation comparator.
+- [ ] **5. 3-Policy Simulation Comparator (Milestone 5)**
+  Becomes usable: Merchant can run a 1,000-session 3-policy simulation comparator directly from the Merchant Console to evaluate No Discount vs Blanket 15% vs FairCart AI with reproducible fixed seeds (`seed=42`).
   Why now: Demonstrates the economic superiority of margin-aware value optimization over blanket discounting.
   PRD ref: `prd.md > Feature F`, `prd.md > View 2`
-  Spec ref: `spec.md > 5.5 /simulate`, `spec.md > 6. Component 6 & 8`
-  Build: Implement `POST /api/v1/simulate` with fixed seeds (`seed=42`); build Merchant Console view.
+  Spec ref: `spec.md > 5.5 /simulate`, `spec.md > 6. Component 6`
+  Build: Implement `POST /api/v1/simulate` with fixed seeds (`seed=42`); connect simulation runner and metrics visualization in Merchant Console.
   Verify (mechanical): Verify reproducibility of simulation metrics across runs.
-  Commit: `Milestone 4: Add merchant console, policy sliders, and 3-policy simulator`
+  Commit: `Milestone 5: Implement 3-policy economic simulation comparator`
 
 - [ ] **6. Simulated Checkout & End-to-End Verification (Milestone 5)**
   Becomes usable: Shopper can complete simulated zero-payment checkout, receive an order receipt, and reset session.

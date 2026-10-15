@@ -5,10 +5,13 @@ from backend.app.config import settings
 from backend.app.db.database import init_db
 from backend.app.db.repository import CatalogRepository
 from backend.app.engine import DecisionOrchestrator
+from backend.app.engine.explanation import GeminiExplanationService
 from backend.app.models.schemas import (
     BasketQuote,
     DecisionRequest,
     DecisionResponse,
+    ExplanationRequest,
+    ExplanationResponse,
     HealthResponse,
     MerchantSettingsRequest,
     Product,
@@ -96,6 +99,19 @@ def calculate_quote(request: QuoteRequest) -> BasketQuote:
         return orchestrator.calculate_basket_quote(cart_entities, request.applied_discounts)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Basket quote calculation failed: {str(e)}")
+
+@app.post("/api/v1/explanation", response_model=ExplanationResponse, tags=["AI Explanation"])
+async def explain_recommendations(request: ExplanationRequest) -> ExplanationResponse:
+    """Asynchronously generates natural-language explanations powered by Gemini with deterministic fallback.
+    
+    This endpoint operates completely independently of the synchronous decision pipeline
+    and cannot modify financial values, prices, or product rankings.
+    """
+    try:
+        service = GeminiExplanationService()
+        return await service.explain(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Explanation service error: {str(e)}")
 
 @app.get("/api/v1/settings", tags=["Merchant Settings"])
 def get_settings():

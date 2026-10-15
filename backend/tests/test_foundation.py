@@ -88,5 +88,30 @@ class TestFoundationAndHealth(unittest.TestCase):
         self.assertIn("documentation", data)
         self.assertIn("health", data)
 
+    def test_merchant_settings_endpoint(self):
+        """Verifies GET and POST /api/v1/settings for merchant margin floor and discount cap."""
+        # Read current settings
+        res = self.client.get("/api/v1/settings")
+        self.assertEqual(res.status_code, 200)
+        settings = res.json()
+        self.assertIn("margin_floor", settings)
+        self.assertIn("discount_cap", settings)
+
+        # Update settings
+        update_payload = {"margin_floor": 0.25, "discount_cap": 0.15}
+        post_res = self.client.post("/api/v1/settings", json=update_payload)
+        self.assertEqual(post_res.status_code, 200)
+        self.assertEqual(post_res.json()["status"], "updated")
+
+        # Verify persisted values
+        verify_res = self.client.get("/api/v1/settings")
+        self.assertEqual(verify_res.status_code, 200)
+        updated_settings = verify_res.json()
+        self.assertEqual(updated_settings["margin_floor"], 0.25)
+        self.assertEqual(updated_settings["discount_cap"], 0.15)
+
+        # Restore default 20%/20%
+        self.client.post("/api/v1/settings", json={"margin_floor": 0.20, "discount_cap": 0.20})
+
 if __name__ == "__main__":
     unittest.main()

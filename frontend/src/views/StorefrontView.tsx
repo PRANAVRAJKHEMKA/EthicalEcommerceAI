@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Search, AlertCircle, RefreshCw, Layers, ShieldCheck, Cpu, Compass, Sparkles } from 'lucide-react';
-import { Product, RecommendationItem } from '../types.ts';
+import { Search, AlertCircle, RefreshCw, Layers, ShieldCheck, Cpu, Compass, Sparkles, HelpCircle } from 'lucide-react';
+import { Product, RecommendationItem, ItemExplanation } from '../types.ts';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { RecommendationCard } from '../components/RecommendationCard.tsx';
 
@@ -23,6 +23,9 @@ interface StorefrontViewProps {
   dismissedIds: Set<string>;
   shoppingContext: string;
   onSelectShoppingContext: (context: string) => void;
+  explanations?: Record<string, ItemExplanation>;
+  isAiGenerated?: boolean;
+  onOpenTransparency?: () => void;
 }
 
 const SHOPPING_CONTEXTS = [
@@ -48,6 +51,9 @@ export function StorefrontView({
   dismissedIds,
   shoppingContext,
   onSelectShoppingContext,
+  explanations,
+  isAiGenerated,
+  onOpenTransparency,
 }: StorefrontViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -83,9 +89,20 @@ export function StorefrontView({
       {/* Restrained, Premium Value Proposition Banner */}
       <section className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-200/90 shadow-sm w-full min-w-0">
         <div className="max-w-3xl space-y-3">
-          <div className="inline-flex items-center space-x-2 bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-xs font-semibold border border-slate-200">
-            <Cpu className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Devpost "Build With AI: Basics" Project</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center space-x-2 bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-xs font-semibold border border-slate-200">
+              <Cpu className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Devpost "Build With AI: Basics" Project</span>
+            </div>
+            {onOpenTransparency && (
+              <button
+                onClick={onOpenTransparency}
+                className="inline-flex items-center space-x-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-200 transition-colors cursor-pointer"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>How Offers & AI Work</span>
+              </button>
+            )}
           </div>
 
           <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900 leading-tight">
@@ -93,13 +110,13 @@ export function StorefrontView({
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
-            Explore 24 productivity tools, creator peripherals, and desk essentials backed by a deterministic SQLite catalogue. As you shop, FairCart AI balances customer savings with real merchant margin safety.
+            Explore 32 productivity tools, creator peripherals, and desk essentials backed by a deterministic SQLite catalogue. As you shop, FairCart AI balances customer savings with real merchant margin safety.
           </p>
 
           <div className="pt-1 flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-500">
             <span className="inline-flex items-center space-x-1.5 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>24 Local SQLite Items</span>
+              <span>32 Local SQLite Items</span>
             </span>
             <span className="hidden sm:inline">·</span>
             <span className="inline-flex items-center space-x-1.5 font-medium">
@@ -160,15 +177,21 @@ export function StorefrontView({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeRecommendations.map((rec) => (
-              <RecommendationCard
-                key={rec.product_id}
-                recommendation={rec}
-                onAccept={onAcceptRecommendation}
-                onDismiss={onDismissRecommendation}
-                isAdded={false}
-              />
-            ))}
+            {activeRecommendations.map((rec) => {
+              const expObj = explanations ? explanations[rec.product_id] : undefined;
+              return (
+                <RecommendationCard
+                  key={rec.product_id}
+                  recommendation={rec}
+                  onAccept={onAcceptRecommendation}
+                  onDismiss={onDismissRecommendation}
+                  isAdded={false}
+                  explanationText={expObj?.explanation}
+                  factualSignals={expObj?.factual_signals}
+                  isAiGenerated={Boolean(isAiGenerated && expObj?.source === 'gemini')}
+                />
+              );
+            })}
           </div>
         </section>
       )}
@@ -198,7 +221,7 @@ export function StorefrontView({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search 24 products..."
+            placeholder="Search 32 products..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all"

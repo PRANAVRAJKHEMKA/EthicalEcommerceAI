@@ -126,7 +126,7 @@ $$E[\text{contribution\_profit}(a)] = P(\text{conversion} \mid \text{context}, a
 
 **2. Run Backend API Server:**
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload --reload-dir backend
 ```
 
 **3. Run Frontend Development Server:**

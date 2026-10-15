@@ -7,6 +7,9 @@ interface RecommendationCardProps {
   onAccept: (rec: RecommendationItem) => void;
   onDismiss: (productId: string) => void;
   isAdded?: boolean;
+  explanationText?: string;
+  factualSignals?: string[];
+  isAiGenerated?: boolean;
 }
 
 export function RecommendationCard({
@@ -14,6 +17,9 @@ export function RecommendationCard({
   onAccept,
   onDismiss,
   isAdded = false,
+  explanationText,
+  factualSignals,
+  isAiGenerated = false,
 }: RecommendationCardProps) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -21,6 +27,9 @@ export function RecommendationCard({
   const discountPct = Math.round(recommendation.discount_percentage * 100);
   const savings = recommendation.savings;
   const finalPrice = recommendation.final_price;
+
+  // Use natural explanation if available, fallback to deterministic attribute reason
+  const displayedExplanation = explanationText || recommendation.compatibility_reason;
 
   return (
     <div className={`relative rounded-xl border p-4 shadow-sm transition-all flex flex-col justify-between ${
@@ -38,6 +47,11 @@ export function RecommendationCard({
             }`}>
               {hasOffer ? 'Eligible Bundle Deal' : 'Compatible Accessory'}
             </span>
+            {isAiGenerated && (
+              <span className="text-[9px] bg-indigo-100 text-indigo-800 font-semibold px-1.5 py-0.2 rounded border border-indigo-200">
+                ✨ AI Copy
+              </span>
+            )}
           </div>
 
           <button
@@ -81,8 +95,8 @@ export function RecommendationCard({
               {recommendation.name}
             </h4>
 
-            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed line-clamp-2">
-              {recommendation.compatibility_reason}
+            <p className="text-[11px] text-slate-600 mt-1 leading-relaxed line-clamp-2">
+              {displayedExplanation}
             </p>
 
             {/* Pricing Row */}
@@ -142,6 +156,15 @@ export function RecommendationCard({
             <p className="leading-relaxed">
               <strong>Relevance Score:</strong> {Math.round(recommendation.affinity_score * 100)}% affinity based on compatibility attributes.
             </p>
+            {factualSignals && factualSignals.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {factualSignals.map((sig, i) => (
+                  <span key={i} className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-mono">
+                    {sig}
+                  </span>
+                ))}
+              </div>
+            )}
             <p className="leading-relaxed">
               <strong>Economic Rule:</strong>{' '}
               {hasOffer

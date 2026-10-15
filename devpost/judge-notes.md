@@ -370,6 +370,38 @@
 
 ---
 
+### DEC-018: Milestone 4 Product Refinement, Gemini Explanations, State Persistence, and Reload Isolation
+
+- **What We Decided & Issues Resolved:**
+  1. **Uvicorn Reload Isolation (`--reload-dir backend`):**
+     - *Issue:* Default Uvicorn `--reload` watched the root project directory `D:\EthicalEcommerceAI`, including `.venv\Lib\site-packages\pydantic_core`. Any file modification or cache access in `.venv` triggered an unwanted reload loop.
+     - *Fix:* Replaced generic `--reload` with `--reload --reload-dir backend`, explicitly confining the file watcher to the application code directory and preventing file contention in `.venv`.
+  2. **Strict Pydantic / pydantic-core Binary Pinning:**
+     - *Issue:* Competing Python processes caused Windows file locking on `.pyd` dynamic libraries, causing `ImportError: cannot import name 'validate_core_schema' from 'pydantic_core'`.
+     - *Fix:* Explicitly pinned `pydantic-core==2.27.2` in `backend/requirements.txt` to match `pydantic==2.10.6`. Terminated all competing orphan processes and verified zero broken dependencies with `pip check`.
+  3. **Verified Explanation Endpoint (`POST /api/v1/explanation`):**
+     - Mounted independently of the primary sub-25ms synchronous decision pipeline (`/api/v1/decision`).
+     - Implemented `GeminiExplanationService` with prompt grounded in SQLite catalogue attributes, response caching, 3.5s timeout, and instant deterministic fallback (sub-5ms latency).
+     - Confirmed absolute financial immutability: the explanation schema contains zero pricing or discount fields, preventing generative AI from modifying commercial rules.
+  4. **Catalogue Expansion (32 Products) & Intent Grounding:**
+     - Expanded catalogue from 24 to 32 verified products across 7 categories with unique, curated Unsplash imagery.
+     - Upgraded Engine A factual compatibility reasons to articulate concrete technical pairings (e.g. wrist extension relief on mechanical keyboards, 100W PD / 4K HDMI multi-monitor routing).
+  5. **State Persistence & Automatic Discount Revocation:**
+     - Persisted `faircart_cart`, `faircart_shopping_context`, and `faircart_dismissed_ids` in `localStorage`.
+     - Implemented a reactive revalidation effect that automatically revokes bundle discounts back to standard price when prerequisite parent items are removed from the basket.
+  6. **Transparency Modal & Interactive Merchant Console:**
+     - Created `TransparencyModal.tsx` disclosing the dual-engine architecture, zero price hikes, and Gemini boundary.
+     - Created interactive policy sliders (`margin_floor`, `discount_cap`) in `MerchantView.tsx` with live SQLite persistence via `GET/POST /api/v1/settings`.
+
+- **Verification Evidence:**
+  - 33/33 backend automated unit tests pass in 0.89s.
+  - Frontend production build (`tsc -b && vite build`) compiles cleanly in 4.27s.
+  - Live Edge CDP screenshots captured: `screenshot_m4_storefront_32_items.png`, `screenshot_m4_transparency_modal.png`, `screenshot_m4_recommendations_explained.png`, `screenshot_m4_merchant_console.png`, `screenshot_m4_revoked_bundle_discount.png`.
+
+- **Status:** **Implemented, Tested & Recovered (in Milestone 4)**.
+
+---
+
 ## 2. Pending Decisions
 
 - **PEN-001 (Spec Stage):** Specific Scikit-Learn Model architecture for purchase propensity ranking (Heuristic Baseline for MVP; scikit-learn classifier designed as optional pluggable extension).
@@ -502,7 +534,8 @@
 - [x] **Live Storefront Recommendation Card Verification:** Captured and visually inspected `screenshot_m3_storefront_recommendation.png` via CDP. Verified prompt display of `RECOMMENDED BUNDLE DEAL` on `Padded Memory Foam Wrist Rest` with `$20.00` price, `$25.00` strikethrough, `Save $5.00 (20% OFF)` badge, and `+ Add Bundle for $20.00` CTA.
 - [x] **Live Cart Drawer Bundle Offer Verification:** Captured and visually inspected `screenshot_m3_cart_recommendation.png` via CDP. Verified seamless rendering of the recommendation card inside the open cart drawer alongside cart items.
 - [x] **Transparency Disclosure Verification:** Captured and visually inspected `screenshot_m3_transparency_expanded.png` via CDP. Verified expandable "Why this item?" drawer detailing factual affinity (75%) and economic margin floor compliance (satisfies 20% floor).
-- [ ] Gemini Asynchronous Service & Fallback: (Scheduled for Milestone 4).
+- [x] **Gemini Asynchronous Service & Fallback (Milestone 4):** Implemented `POST /api/v1/explanation` with `GeminiExplanationService`. Verified attribute-grounded factual copy, 3.5s timeout protection, response caching, strict financial immutability (zero price/margin fields in explanation schema), and sub-5ms deterministic offline fallback.
+- [x] **Product Experience Refinement & Persistence (Milestone 4):** Expanded catalogue to 32 verified products in SQLite with curated imagery. Added Shopping Intent selector with factual compatibility explanations. Implemented `TransparencyModal.tsx` and interactive `MerchantView.tsx` with active sliders (`margin_floor`, `discount_cap`) persisted to SQLite. Implemented automatic bundle discount revocation upon parent item removal in cart.
 - [ ] 3-Policy Simulation Comparator: (Scheduled for Milestone 5).
 
 ---

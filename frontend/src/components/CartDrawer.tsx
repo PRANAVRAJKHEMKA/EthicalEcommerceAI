@@ -1,5 +1,5 @@
 import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, RotateCcw, ShieldCheck, Tag, Sparkles } from 'lucide-react';
-import { CartItem, RecommendationItem, BasketQuote } from '../types.ts';
+import { CartItem, RecommendationItem, BasketQuote, ItemExplanation } from '../types.ts';
 import { RecommendationCard } from './RecommendationCard.tsx';
 
 interface CartDrawerProps {
@@ -15,6 +15,8 @@ interface CartDrawerProps {
   onDismissRecommendation: (productId: string) => void;
   dismissedIds: Set<string>;
   basketQuote?: BasketQuote | null;
+  explanations?: Record<string, ItemExplanation>;
+  isAiGenerated?: boolean;
 }
 
 export function CartDrawer({
@@ -30,6 +32,8 @@ export function CartDrawer({
   onDismissRecommendation,
   dismissedIds,
   basketQuote,
+  explanations,
+  isAiGenerated,
 }: CartDrawerProps) {
   if (!isOpen) return null;
 
@@ -100,7 +104,7 @@ export function CartDrawer({
                 <div>
                   <h3 className="font-semibold text-slate-800 text-sm">Your cart is empty</h3>
                   <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">
-                    Explore our 24 curated tech accessories and peripherals to experience FairCart AI.
+                    Explore our 32 curated tech accessories and peripherals to experience FairCart AI.
                   </p>
                 </div>
                 <button
@@ -217,15 +221,21 @@ export function CartDrawer({
                     </div>
 
                     <div className="space-y-3">
-                      {activeRecommendations.slice(0, 3).map((rec) => (
-                        <RecommendationCard
-                          key={rec.product_id}
-                          recommendation={rec}
-                          onAccept={onAcceptRecommendation}
-                          onDismiss={onDismissRecommendation}
-                          isAdded={false}
-                        />
-                      ))}
+                      {activeRecommendations.slice(0, 3).map((rec) => {
+                        const expObj = explanations ? explanations[rec.product_id] : undefined;
+                        return (
+                          <RecommendationCard
+                            key={rec.product_id}
+                            recommendation={rec}
+                            onAccept={onAcceptRecommendation}
+                            onDismiss={onDismissRecommendation}
+                            isAdded={false}
+                            explanationText={expObj?.explanation}
+                            factualSignals={expObj?.factual_signals}
+                            isAiGenerated={Boolean(isAiGenerated && expObj?.source === 'gemini')}
+                          />
+                        );
+                      })}
                     </div>
                   </div>
                 )}
