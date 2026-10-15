@@ -77,6 +77,15 @@ export function RecommendationCard({
           </button>
         </div>
 
+        {/* Provenance Anchor Pill */}
+        {recommendation.provenance_label && (
+          <div className="mb-2">
+            <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+              🧭 {recommendation.provenance_label}
+            </span>
+          </div>
+        )}
+
         {/* Product Info & Thumbnail */}
         <div className="flex items-start space-x-3">
           <img
@@ -132,7 +141,7 @@ export function RecommendationCard({
                     ${recommendation.reference_price.toFixed(2)}
                   </span>
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                    Standard price · No discount applied
+                    {recommendation.conditions || 'Standard price · Add items to cart to unlock bundle deals'}
                   </span>
                 </>
               )}

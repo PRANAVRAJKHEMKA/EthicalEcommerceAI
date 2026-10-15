@@ -26,6 +26,8 @@ interface StorefrontViewProps {
   explanations?: Record<string, ItemExplanation>;
   isAiGenerated?: boolean;
   onOpenTransparency?: () => void;
+  onViewProduct?: (productId: string) => void;
+  onResetSession?: () => void;
 }
 
 const SHOPPING_CONTEXTS = [
@@ -54,6 +56,8 @@ export function StorefrontView({
   explanations,
   isAiGenerated,
   onOpenTransparency,
+  onViewProduct,
+  onResetSession,
 }: StorefrontViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -161,19 +165,36 @@ export function StorefrontView({
         </div>
       </section>
 
-      {/* Multi-Candidate Recommendation Section (Surfaced when cart has items) */}
+      {/* Multi-Candidate Recommendation Section (Surfaced on empty basket and active cart) */}
       {activeRecommendations.length > 0 && (
         <section className="space-y-3 pt-1">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Sparkles className="w-4 h-4 text-indigo-600" />
               <h2 className="text-sm font-bold text-slate-900">
-                Recommended Complements ({activeRecommendations.length} tailored options)
+                {activeRecommendations[0]?.provenance_label || 'Tailored Recommendations'}
+                <span className="ml-2 font-normal text-xs text-slate-500">
+                  ({activeRecommendations.length} {activeRecommendations.some((r) => r.is_offered) ? 'tailored bundle offers' : 'discovery picks'})
+                </span>
               </h2>
             </div>
-            <span className="text-xs text-slate-400 font-mono">
-              Margin-Verified Offers
-            </span>
+            <div className="flex items-center space-x-3">
+              {onResetSession && (
+                <button
+                  onClick={onResetSession}
+                  className="text-xs text-slate-500 hover:text-slate-800 underline underline-offset-2 flex items-center gap-1"
+                  title="Clear viewed history and cart to reset session to cold-start discovery"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Reset Session
+                </button>
+              )}
+              <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+                {activeRecommendations.some((r) => r.is_offered)
+                  ? 'Margin-Verified Offers'
+                  : 'Standard Reference Pricing'}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -302,6 +323,7 @@ export function StorefrontView({
                   onAddToCart={onAddToCart}
                   cartQuantity={cartQuantities[product.id] || 0}
                   eligibleOffer={eligibleOffersByProductId[product.id]}
+                  onView={onViewProduct}
                 />
               ))}
             </div>

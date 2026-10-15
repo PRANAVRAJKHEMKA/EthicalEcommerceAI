@@ -37,6 +37,11 @@ class DecisionRequest(BaseModel):
     dwell_time_seconds: int = Field(default=30, ge=0, description="Dwell time in current shopping session")
     margin_floor: float = Field(default=0.20, ge=0.0, le=1.0, description="Merchant minimum basket gross margin floor")
     discount_cap: float = Field(default=0.20, ge=0.0, le=0.50, description="Maximum single-item discount percentage cap")
+    # Milestone 4C: Independent Recommendation Anchors
+    viewed_product_ids: list[str] = Field(default_factory=list, description="Recently viewed product IDs in current session")
+    saved_cart_product_ids: list[str] = Field(default_factory=list, description="Product IDs in an explicitly saved cart")
+    historical_order_product_ids: list[str] = Field(default_factory=list, description="Product IDs from completed prior FairCart orders")
+    search_query: str = Field(default="", description="Active or recent search query within the application")
 
 class IncentiveResponse(BaseModel):
     """Engine B economic incentive optimization output."""
@@ -75,6 +80,8 @@ class RecommendationItem(BaseModel):
     conditions: str
     basket_gross_margin: float
     decision_reason: str
+    recommendation_source: str = Field(default="active_basket", description="Provenance source: active_basket, product_views, saved_cart, historical_order, shopping_context, catalog_popular")
+    provenance_label: str = Field(default="", description="Modest, factual UI explanation of recommendation source")
 
 # For backwards compatibility with single recommendation responses
 RecommendationResponse = RecommendationItem

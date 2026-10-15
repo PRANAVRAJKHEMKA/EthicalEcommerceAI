@@ -569,7 +569,43 @@
 
 ---
 
+### DEC-021: Empty-Basket Recommendations, Historical Personalization & Cold-Start Intelligence (Milestone 4C)
 
+- **What We Decided & Implemented:**
+  1. **Recommendation Anchor Model ($A = B \cup V \cup S \cup O$):**
+     - Decoupled recommendation generation from active basket presence. Recommendations can now anchor on:
+       - $B$: Active basket items (weight 1.0)
+       - $V$: Recent viewed items (weight 0.60)
+       - $S$: Saved-cart items (weight 0.85)
+       - $O$: Historical FairCart order items (weight 0.75)
+     - Implemented logarithmic repetition dampening to prevent spamming:
+       $$\text{repetition\_guard} = \min(1.5, 1.0 + 0.2 \cdot \ln(1 + \text{view\_count}))$$
+  2. **Commercial vs Historical Cart Separation (Zero Unearned Bundle Discounts):**
+     - Active cart $B$ is the sole basis for pricing quotes, checkout subtotals, and bundle discounts.
+     - Historical or viewed items in $A \setminus B$ must **never** trigger promotional bundle pricing. When $B = \emptyset$, all candidates receive `is_offered = False`, standard reference price, zero savings, and condition *"Standard price · Add items to cart to unlock bundle deals"*.
+  3. **Deterministic Cold-Start Scoring Formula ($S_{\text{cold}}$):**
+     - For shoppers with empty carts and zero history, FairCart AI returns top catalog picks scored by:
+       $$S_{\text{cold}}(p \mid c) = 0.40 U(p, c) + 0.35 \operatorname{Popularity}(p) + 0.15 \operatorname{Connectivity}(p) + 0.10 P(p, \emptyset)$$
+     - Avoids zero-candidate screens and prevents cold-start abandonment.
+  4. **Modest, Honest Provenance Labels:**
+     - Cold-start items are explicitly labeled *"Popular picks from our catalogue"*, never claiming false personalization.
+     - Context-aligned items display *"Recommended for your selected [Context] setup"*.
+     - History-anchored items state *"Inspired by products you've viewed"*, *"Based on items in your saved cart"*, or *"Based on items in your previous FairCart order"*.
+  5. **Interactive Storefront & Session Reset:**
+     - Storefront displays 4 discovery picks immediately on first visit before any product is added to cart.
+     - Product interactions dynamically update recent views.
+     - Added a "Reset Session" button allowing judges to wipe browsing history and return to cold start instantly.
+  6. **Automated Verification:**
+     - 76/76 backend tests pass in 19.95s, including 15 dedicated tests in `test_empty_basket_recommendations.py`.
+     - Frontend production build (`tsc -b && vite build`) compiles in 2.44s.
+     - Live Edge CDP visual screenshots captured: `screenshot_m4c_cold_start.png`, `screenshot_m4c_context_based.png`, `screenshot_m4c_view_based.png`.
+
+- **How to Explain to Judges:**
+  "Most recommendation engines show a blank screen or spam generic ads until you add an item to your cart. FairCart AI introduces an anchor model that recommends relevant accessories based on products you've inspected, saved items, or your selected setup goal. But ethically, we strictly separate discovery from pricing: you can never get an unearned bundle discount without actually buying the parent item in your active basket. And when a shopper is completely new, our cold-start formula recommends popular, versatile catalog staples with full honesty—never pretending to know them."
+
+- **Status:** **Implemented, Tested & Verified (in Milestone 4C)**.
+
+---
 
 ## 4. Feature Traceability & Implementation Status
 
@@ -582,6 +618,7 @@
 | **Interactive Cart & Drawer** | PRD §4.A | **Implemented (React)** | **Passed (State & UI verified with localStorage)** |
 | **Storefront & Category Filters** | PRD §2 (View 1) | **Implemented (React)** | **Passed (Dynamic categories & search)** |
 | **Shopping Intent Context Selector** | PRD §4.B | **Implemented (React)** | **Passed (Productivity, Gaming, Study, Travel, Wellness)** |
+| **Empty-Basket & Cold-Start Discovery** | Spec §3.7 | **Implemented (`recommender.py`)** | **Passed ($S_{cold}$ formula, anchors $A = B \cup V \cup S \cup O$, 15 tests)** |
 | **Simulated Zero-Payment Checkout** | PRD §1.6 | **Implemented (React Modal)** | **Passed (Itemized receipt & reset verified)** |
 | **Merchant Console Interactive Sliders** | PRD §2 (View 2) | **Implemented (React & SQLite)** | **Passed (Live slider updates persisted via `/api/v1/settings`)** |
 | **Apriori Association Rule Mining** | Spec §3.4 | **Implemented (`associations.py`)** | **Passed (980 rules mined from synthetic sessions, Laplace-smoothed)** |
@@ -597,7 +634,7 @@
 | **Transparent Shopper Offer Card** | PRD §4.D | **Implemented (`RecommendationCard.tsx`)** | **Passed (CDP screenshots verified)** |
 | **"How Offers Work" Disclosure Modal** | PRD §1.5 | **Implemented (`TransparencyModal.tsx`)** | **Passed (Full dual-engine transparency)** |
 | **Anonymous Session Interaction Events** | Spec §5.7 | **Implemented (`POST/GET/DELETE /api/v1/events`)** | **Passed (Zero-PII session lifecycle logging)** |
-| **Automated Test Suite (Full Backend)** | PRD §7 | **Implemented (`backend/tests/`)** | **Passed (61/61 backend unit tests passing in ~20s)** |
+| **Automated Test Suite (Full Backend)** | PRD §7 | **Implemented (`backend/tests/`)** | **Passed (76/76 backend unit tests passing in ~20s)** |
 | **3-Policy Synthetic Simulation Engine**| PRD §4.F | Planned (Milestone 5) | Not Run |
 
 ---

@@ -136,6 +136,33 @@ $$\operatorname{MMR}(p) = \arg\max_{p \in C \setminus R} \left[ \lambda \cdot S_
 Where multi-attribute similarity between products $p_1$ and $p_2$ is defined as:
 $$\operatorname{Sim}(p_1, p_2) = 0.40 \cdot \mathbf{1}_{\{cat_1 = cat_2\}} + 0.30 \cdot \mathbf{1}_{\{subcat_1 = subcat_2\}} + 0.20 \cdot \operatorname{Jaccard}(tags_1, tags_2) + 0.10 \cdot \left(1.0 - \frac{|price_1 - price_2|}{\max(price_1, price_2, 1)}\right)$$
 
+### 3.7 Empty-Basket Recommendation Anchors & Cold-Start Scoring Model
+FairCart AI evaluates recommendations even when the active basket is empty ($B = \emptyset$).
+
+1. **Recommendation Anchor Set $A$:**
+   $$A = B \cup V \cup S \cup O$$
+   - $B$: Active basket items (weight $w=1.0$)
+   - $S$: Saved cart items (weight $w=0.85$, $t_0=1.0\text{h}$)
+   - $O$: Historical completed FairCart order items (weight $w=0.75$, $t_0=2.0\text{h}$)
+   - $V$: Recent viewed items (weight $w=0.60$, $t_0=0.5\text{h}$)
+   
+   To prevent view-spamming, each anchor applies a logarithmic repetition dampener:
+   $$\text{repetition\_guard} = \min(1.5, 1.0 + 0.2 \cdot \ln(1 + \text{view\_count}))$$
+   $$\text{effective\_weight} = w \cdot \exp\left(-\frac{\text{age\_hours}}{24.0}\right) \cdot \text{repetition\_guard}$$
+
+2. **Cold-Start Scoring Formula $S_{\text{cold}}(p \mid c)$:**
+   When no anchors exist ($A = \emptyset$), candidate items are scored by a deterministic catalog balance formula:
+   $$S_{\text{cold}}(p \mid c) = 0.40 U(p, c) + 0.35 \operatorname{Popularity}(p) + 0.15 \operatorname{Connectivity}(p) + 0.10 P(p, \emptyset)$$
+   - $U(p, c)$: Intent use-case alignment (0.50 for general context).
+   - $\operatorname{Popularity}(p)$: Catalog transaction frequency baseline.
+   - $\operatorname{Connectivity}(p)$: Complement graph degree in catalog ($\frac{|\operatorname{comp}(p)|}{\max_q |\operatorname{comp}(q)|}$).
+   - $P(p, \emptyset)$: Price accessibility fit relative to catalog median ($35.00).
+
+3. **Commercial vs Historical Cart Separation:**
+   Engine B strictly evaluates discounts based only on active basket $B$. When $B = \emptyset$:
+   $$\text{is\_offered} = \text{False}, \quad \text{tier} = \text{"NONE"}, \quad \text{savings} = 0.0, \quad \text{final\_price} = \text{reference\_price}$$
+   Items in $A \setminus B$ never trigger unearned promotional discounts.
+
 ---
 
 ## 4. Stack & Environment Configuration

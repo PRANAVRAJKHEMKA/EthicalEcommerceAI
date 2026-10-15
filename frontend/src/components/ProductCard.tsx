@@ -12,6 +12,7 @@ interface ProductCardProps {
   ) => void;
   cartQuantity: number;
   eligibleOffer?: RecommendationItem;
+  onView?: (productId: string) => void;
 }
 
 export function ProductCard({
@@ -19,6 +20,7 @@ export function ProductCard({
   onAddToCart,
   cartQuantity,
   eligibleOffer,
+  onView,
 }: ProductCardProps) {
   const [justAdded, setJustAdded] = useState(false);
 
@@ -28,6 +30,7 @@ export function ProductCard({
   const savings = hasOffer ? eligibleOffer!.savings : 0;
 
   const handleAdd = () => {
+    onView?.(product.id);
     if (hasOffer) {
       onAddToCart(
         product,
@@ -43,7 +46,10 @@ export function ProductCard({
   };
 
   return (
-    <div className={`bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between group ${
+    <div
+      onClick={() => onView?.(product.id)}
+      onMouseEnter={() => onView?.(product.id)}
+      className={`bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between group cursor-pointer ${
       hasOffer ? 'border-indigo-300 ring-1 ring-indigo-200/50' : 'border-slate-200/90 hover:border-slate-300'
     }`}>
       <div>

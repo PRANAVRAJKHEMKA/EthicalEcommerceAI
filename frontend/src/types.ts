@@ -42,6 +42,10 @@ export interface DecisionRequest {
   dwell_time_seconds?: number;
   margin_floor?: number;
   discount_cap?: number;
+  viewed_product_ids?: string[];
+  saved_cart_product_ids?: string[];
+  historical_order_product_ids?: string[];
+  search_query?: string;
 }
 
 export interface RecommendationItem {
@@ -69,6 +73,8 @@ export interface RecommendationItem {
   conditions: string;
   basket_gross_margin: number;
   decision_reason: string;
+  recommendation_source?: string;
+  provenance_label?: string;
 }
 
 export type RecommendationResponse = RecommendationItem;

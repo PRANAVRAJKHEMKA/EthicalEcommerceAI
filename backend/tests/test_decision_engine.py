@@ -259,16 +259,22 @@ class TestDecisionEngine(unittest.TestCase):
         self.assertLess(response.execution_latency_ms, 25.0)
 
     def test_orchestrator_empty_cart_returns_safe_no_offer(self):
-        """Engine C returns a graceful NO_OFFER with recommendation=None on empty cart."""
+        """Engine C returns safe empty-basket recommendations with NO_OFFER and zero discounts."""
         req = DecisionRequest(
             session_id="test-empty",
             cart_items=[],
         )
         response = self.orchestrator.process_decision(req)
         self.assertEqual(response.decision, "NO_OFFER")
-        self.assertIsNone(response.recommendation)
-        self.assertIsNone(response.incentive)
-        self.assertIn("empty", response.deterministic_explanation.lower())
+        self.assertIsNotNone(response.recommendation)
+        self.assertGreater(len(response.recommendations), 0)
+        self.assertFalse(response.recommendation.is_offered)
+        self.assertEqual(response.recommendation.savings, 0.0)
+        self.assertEqual(response.recommendation.final_price, response.recommendation.reference_price)
+        self.assertIsNotNone(response.incentive)
+        self.assertFalse(response.incentive.is_offered)
+        self.assertEqual(response.incentive.savings, 0.0)
+        self.assertIn("active cart is empty", response.decision_reason.lower())
 
     def test_independent_recommendation_and_incentive(self):
         """When Engine B returns NO_OFFER, Engine A's recommendation is still returned transparently."""

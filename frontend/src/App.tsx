@@ -100,6 +100,30 @@ export default function App() {
     }
   });
 
+  // Viewed product IDs persisted to localStorage
+  const [viewedProductIds, setViewedProductIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('faircart_viewed_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleViewProduct = useCallback((productId: string) => {
+    setViewedProductIds((prev) => {
+      const filtered = prev.filter((id) => id !== productId);
+      const next = [productId, ...filtered].slice(0, 10);
+      try {
+        localStorage.setItem('faircart_viewed_ids', JSON.stringify(next));
+      } catch (e) {
+        console.error('Failed to save viewed IDs', e);
+      }
+      return next;
+    });
+  }, []);
+
   // Save dismissedIds to localStorage
   useEffect(() => {
     try {
@@ -164,13 +188,35 @@ export default function App() {
     loadProducts();
   }, [checkHealth, loadProducts]);
 
-  // Query Decision Engine whenever cart contents or shoppingContext change
-  useEffect(() => {
-    if (cart.length === 0) {
-      setDecision(null);
-      return;
+  // Reset session handler for demonstration and testing cold-start fallback
+  const handleResetSession = useCallback(() => {
+    setCart([]);
+    setDismissedIds(new Set());
+    setViewedProductIds([]);
+    try {
+      localStorage.removeItem('faircart_cart');
+      localStorage.removeItem('faircart_dismissed_ids');
+      localStorage.removeItem('faircart_viewed_ids');
+      localStorage.removeItem('faircart_saved_cart');
+      localStorage.removeItem('faircart_historical_orders');
+    } catch (e) {
+      console.error('Failed to clear storage:', e);
     }
+    fetchDecision({
+      session_id: sessionId,
+      cart_items: [],
+      shopping_context: shoppingContext,
+      viewed_product_ids: [],
+      dwell_time_seconds: 0,
+      margin_floor: 0.20,
+      discount_cap: 0.20,
+    })
+      .then((data) => setDecision(data))
+      .catch((err) => console.error('Error fetching reset decision:', err));
+  }, [sessionId, shoppingContext]);
 
+  // Query Decision Engine whenever cart contents, shoppingContext, or viewedProductIds change
+  useEffect(() => {
     let isMounted = true;
 
     const appliedDiscounts: Record<string, number> = {};
@@ -188,6 +234,7 @@ export default function App() {
       })),
       applied_discounts: appliedDiscounts,
       shopping_context: shoppingContext,
+      viewed_product_ids: viewedProductIds,
       dwell_time_seconds: 30,
       margin_floor: 0.20,
       discount_cap: 0.20,
@@ -207,7 +254,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [cart, shoppingContext]);
+  }, [cart, shoppingContext, viewedProductIds, sessionId]);
 
   // Revalidate cart bundle discounts against latest backend decision
   // Automatically revokes discounts if prerequisite items are removed
@@ -451,6 +498,8 @@ export default function App() {
               explanations={explanations}
               isAiGenerated={isAiGenerated}
               onOpenTransparency={() => setIsTransparencyOpen(true)}
+              onViewProduct={handleViewProduct}
+              onResetSession={handleResetSession}
             />
           ) : (
             <MerchantView products={products} health={health} />

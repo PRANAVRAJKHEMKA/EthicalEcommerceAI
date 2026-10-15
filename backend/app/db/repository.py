@@ -239,6 +239,40 @@ class CatalogRepository:
         finally:
             conn.close()
 
+    def get_session_saved_cart_ids(self, session_id: str) -> list[str]:
+        """Returns distinct product IDs in the session's saved cart."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT product_id
+                FROM session_events
+                WHERE session_id = ? AND product_id != '' AND event_type = 'cart_saved'
+                ORDER BY timestamp DESC
+                LIMIT 20;
+            """, (session_id,))
+            rows = cursor.fetchall()
+            return [r["product_id"] for r in rows if r["product_id"]]
+        finally:
+            conn.close()
+
+    def get_session_historical_order_ids(self, session_id: str) -> list[str]:
+        """Returns distinct product IDs from completed simulated FairCart purchases for this session."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT product_id
+                FROM session_events
+                WHERE session_id = ? AND product_id != '' AND event_type = 'simulated_purchase_completed'
+                ORDER BY timestamp DESC
+                LIMIT 20;
+            """, (session_id,))
+            rows = cursor.fetchall()
+            return [r["product_id"] for r in rows if r["product_id"]]
+        finally:
+            conn.close()
+
     def clear_session_events(self, session_id: str) -> int:
         """Deletes all anonymous interaction events for a session upon shopper reset."""
         conn = get_connection(self.db_path)

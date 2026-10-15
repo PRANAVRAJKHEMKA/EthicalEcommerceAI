@@ -14,7 +14,7 @@ import time
 import uuid
 from backend.app.db.repository import CatalogRepository, ProductEntity
 from backend.app.engine.optimizer import EconomicOptimizer
-from backend.app.engine.recommender import RecommenderEngine
+from backend.app.engine.recommender import RecommenderEngine, RecommendationAnchor
 from backend.app.models.schemas import (
     BasketQuote,
     BasketQuoteItem,
@@ -100,72 +100,119 @@ class DecisionOrchestrator:
         """Processes a shopper's cart state to produce ranked recommendations and independent offers.
 
         Execution is entirely local and synchronous (< 25ms SLA).
+        Supports active-basket offers and empty-basket personalized / cold-start recommendations.
         """
         start_time = time.perf_counter()
         request_id = f"dec-{uuid.uuid4().hex[:10]}"
 
         # 1. Input sanitization & catalog verification
-        if not request.cart_items:
-            latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-            return DecisionResponse(
-                request_id=request_id,
-                session_id=request.session_id,
-                shopping_context=request.shopping_context,
-                decision="NO_OFFER",
-                recommendations=[],
-                recommendation=None,
-                incentive=None,
-                cart_quote=None,
-                eligible_offers_by_product_id={},
-                deterministic_explanation="Cart is empty. Add products to receive tailored complementary recommendations.",
-                decision_reason="No items present in cart to evaluate.",
-                basket_gross_margin=0.0,
-                fallback_applied=False,
-                execution_latency_ms=latency_ms,
-            )
+        catalog = self.repository.get_all_entities()
+        session_events = self.repository.get_session_events(request.session_id, limit=50)
 
         # Retrieve unique product entities for items in cart
-        product_ids = [item.product_id for item in request.cart_items]
-        entities_by_id = {e.id: e for e in self.repository.get_entities_by_ids(product_ids)}
+        product_ids = [item.product_id for item in request.cart_items] if request.cart_items else []
+        entities_by_id = {e.id: e for e in self.repository.get_entities_by_ids(product_ids)} if product_ids else {}
 
         cart_entities: list[tuple[ProductEntity, int]] = []
-        for item in request.cart_items:
-            entity = entities_by_id.get(item.product_id)
-            if entity and item.quantity > 0:
-                cart_entities.append((entity, item.quantity))
+        if request.cart_items:
+            for item in request.cart_items:
+                entity = entities_by_id.get(item.product_id)
+                if entity and item.quantity > 0:
+                    cart_entities.append((entity, item.quantity))
 
-        if not cart_entities:
-            latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-            return DecisionResponse(
-                request_id=request_id,
-                session_id=request.session_id,
-                shopping_context=request.shopping_context,
-                decision="NO_OFFER",
-                recommendations=[],
-                recommendation=None,
-                incentive=None,
-                cart_quote=None,
-                eligible_offers_by_product_id={},
-                deterministic_explanation="No catalog items in cart could be validated.",
-                decision_reason="All requested cart product IDs were invalid or zero quantity.",
-                basket_gross_margin=0.0,
-                fallback_applied=False,
-                execution_latency_ms=latency_ms,
+        # 2. Compute authoritative baseline quote for the cart (if items present)
+        cart_quote = (
+            self.calculate_basket_quote(cart_entities, applied_discounts=request.applied_discounts)
+            if cart_entities
+            else None
+        )
+
+        # 3. Assemble recommendation anchors from active basket, views, saved cart, and order history
+        anchors: list[RecommendationAnchor] = []
+        seen_anchor_ids: set[str] = set()
+
+        # Anchor Source 1: Active cart items (highest priority, weight 1.0)
+        for entity, _ in cart_entities:
+            anchors.append(
+                RecommendationAnchor(
+                    product_id=entity.id,
+                    source="active_basket",
+                    weight=1.0,
+                    age_hours=0.0,
+                    view_count=1,
+                )
             )
+            seen_anchor_ids.add(entity.id)
 
-        # 2. Compute authoritative baseline quote for the cart
-        cart_quote = self.calculate_basket_quote(cart_entities, applied_discounts=request.applied_discounts)
+        # Anchor Source 2: Saved cart items (weight 0.85)
+        saved_ids = list(request.saved_cart_product_ids)
+        if not saved_ids:
+            saved_ids = self.repository.get_session_saved_cart_ids(request.session_id)
+        for sid in saved_ids:
+            if sid not in seen_anchor_ids:
+                anchors.append(
+                    RecommendationAnchor(
+                        product_id=sid,
+                        source="saved_cart",
+                        weight=0.85,
+                        age_hours=1.0,
+                        view_count=1,
+                    )
+                )
+                seen_anchor_ids.add(sid)
 
-        # 3. Retrieve full catalog and run Engine A (Ranked Candidates)
-        catalog = self.repository.get_all_entities()
-        viewed_ids = self.repository.get_session_viewed_product_ids(request.session_id)
-        session_events = self.repository.get_session_events(request.session_id, limit=50)
+        # Anchor Source 3: Historical completed FairCart order items (weight 0.75)
+        order_ids = list(request.historical_order_product_ids)
+        if not order_ids:
+            order_ids = self.repository.get_session_historical_order_ids(request.session_id)
+        for oid in order_ids:
+            if oid not in seen_anchor_ids:
+                anchors.append(
+                    RecommendationAnchor(
+                        product_id=oid,
+                        source="historical_order",
+                        weight=0.75,
+                        age_hours=2.0,
+                        view_count=1,
+                    )
+                )
+                seen_anchor_ids.add(oid)
+
+        # Anchor Source 4: Viewed items (weight 0.60)
+        viewed_ids = list(request.viewed_product_ids)
+        if not viewed_ids:
+            viewed_ids = self.repository.get_session_viewed_product_ids(request.session_id)
+
+        view_counts: dict[str, int] = {}
+        for evt in session_events:
+            pid = evt.get("product_id") if isinstance(evt, dict) else getattr(evt, "product_id", "")
+            etype = evt.get("event_type") if isinstance(evt, dict) else getattr(evt, "event_type", "")
+            if pid and etype in ("product_view", "product_viewed"):
+                view_counts[pid] = view_counts.get(pid, 0) + 1
+
+        for vid in viewed_ids:
+            if vid not in seen_anchor_ids:
+                v_count = view_counts.get(vid, 1)
+                anchors.append(
+                    RecommendationAnchor(
+                        product_id=vid,
+                        source="product_view",
+                        weight=0.60,
+                        age_hours=0.5,
+                        view_count=v_count,
+                    )
+                )
+                seen_anchor_ids.add(vid)
+
+        # 4. Run Engine A (Ranked Candidates)
         candidates = self.recommender.find_recommendations(
             cart_items=cart_entities,
             catalog=catalog,
             shopping_context=request.shopping_context,
             session_viewed_ids=viewed_ids,
             session_events=session_events,
+            anchors=anchors,
+            search_query=request.search_query,
             top_k=4,
         )
 
@@ -181,27 +228,46 @@ class DecisionOrchestrator:
                 incentive=None,
                 cart_quote=cart_quote,
                 eligible_offers_by_product_id={},
-                deterministic_explanation="No compatible complementary items are currently available for this cart.",
-                decision_reason="Engine A found no eligible in-stock complementary candidates.",
-                basket_gross_margin=cart_quote.basket_gross_margin,
+                deterministic_explanation="No compatible recommendation candidates are currently available.",
+                decision_reason="Engine A found no eligible in-stock candidates for the current context.",
+                basket_gross_margin=cart_quote.basket_gross_margin if cart_quote else 0.0,
                 fallback_applied=False,
                 execution_latency_ms=latency_ms,
             )
 
-        # 4. Run Engine B independently for each candidate
+        # 5. Run Engine B independently for each candidate
         recommendation_items: list[RecommendationItem] = []
         eligible_offers: dict[str, RecommendationItem] = {}
         has_any_offer = False
 
         for cand in candidates:
-            opt_result = self.optimizer.optimize(
-                cart_items=cart_entities,
-                candidate=cand.product,
-                affinity_score=cand.affinity_score,
-                dwell_time_seconds=request.dwell_time_seconds,
-                margin_floor=request.margin_floor,
-                discount_cap=request.discount_cap,
-            )
+            if cart_entities:
+                opt_result = self.optimizer.optimize(
+                    cart_items=cart_entities,
+                    candidate=cand.product,
+                    affinity_score=cand.affinity_score,
+                    dwell_time_seconds=request.dwell_time_seconds,
+                    margin_floor=request.margin_floor,
+                    discount_cap=request.discount_cap,
+                )
+                is_offered = opt_result.is_offered
+                tier = opt_result.action_type
+                discount_percentage = round(opt_result.discount_percentage, 4)
+                final_price = opt_result.final_price
+                savings = opt_result.savings
+                conditions = opt_result.conditions
+                gross_margin = round(opt_result.basket_gross_margin, 4)
+                dec_reason = opt_result.decision_reason
+            else:
+                # With an empty cart, Engine B strictly prevents standalone discounts
+                is_offered = False
+                tier = "NONE"
+                discount_percentage = 0.0
+                final_price = cand.product.reference_price
+                savings = 0.0
+                conditions = "Standard price · Add items to cart to unlock bundle deals"
+                gross_margin = 0.0
+                dec_reason = "Active cart is empty; bundle discounts require an active cart."
 
             item = RecommendationItem(
                 product_id=cand.product.id,
@@ -219,20 +285,22 @@ class DecisionOrchestrator:
                 association_lift=cand.association_lift,
                 association_confidence=cand.association_confidence,
                 is_multi_item_match=cand.is_multi_item_match,
-                is_offered=opt_result.is_offered,
-                tier=opt_result.action_type,
-                discount_percentage=round(opt_result.discount_percentage, 4),
-                final_price=opt_result.final_price,
-                savings=opt_result.savings,
+                is_offered=is_offered,
+                tier=tier,
+                discount_percentage=discount_percentage,
+                final_price=final_price,
+                savings=savings,
                 currency="USD",
-                conditions=opt_result.conditions,
-                basket_gross_margin=round(opt_result.basket_gross_margin, 4),
-                decision_reason=opt_result.decision_reason,
+                conditions=conditions,
+                basket_gross_margin=gross_margin,
+                decision_reason=dec_reason,
+                recommendation_source=cand.recommendation_source,
+                provenance_label=cand.provenance_label,
             )
 
             recommendation_items.append(item)
 
-            if opt_result.is_offered:
+            if is_offered:
                 has_any_offer = True
                 eligible_offers[cand.product.id] = item
 
@@ -251,21 +319,42 @@ class DecisionOrchestrator:
                 conditions=top_rec.conditions,
             )
 
-        # 5. Build deterministic explanation
+        # 6. Build deterministic explanation
         context_label = request.shopping_context.capitalize() if request.shopping_context != "all" else "Current"
-        if has_any_offer:
-            offer_count = len(eligible_offers)
-            explanation = (
-                f"Generated {len(recommendation_items)} relevant recommendations for your {context_label} setup. "
-                f"{offer_count} qualified for margin-preserving bundle savings."
+        if cart_entities:
+            if has_any_offer:
+                offer_count = len(eligible_offers)
+                explanation = (
+                    f"Generated {len(recommendation_items)} relevant recommendations for your {context_label} setup. "
+                    f"{offer_count} qualified for margin-preserving bundle savings."
+                )
+                decision_outcome = "OFFER_APPLIED"
+            else:
+                explanation = (
+                    f"Generated {len(recommendation_items)} complementary recommendations at standard reference price. "
+                    f"Merchant margin floors currently preclude promotional discounts."
+                )
+                decision_outcome = "NO_OFFER"
+            audit_reason = (
+                f"Evaluated {len(recommendation_items)} candidates across cart; "
+                f"{len(eligible_offers)} satisfied margin floor ({request.margin_floor*100:.0f}%) and utility constraints."
             )
-            decision_outcome = "OFFER_APPLIED"
+            basket_margin = cart_quote.basket_gross_margin if cart_quote else 0.0
         else:
-            explanation = (
-                f"Generated {len(recommendation_items)} complementary recommendations at standard reference price. "
-                f"Merchant margin floors currently preclude promotional discounts."
-            )
             decision_outcome = "NO_OFFER"
+            rec_src = top_rec.recommendation_source if top_rec else "catalog_popular"
+            if rec_src == "product_views":
+                explanation = "Displaying tailored accessory recommendations inspired by products you recently viewed."
+            elif rec_src == "historical_order":
+                explanation = "Displaying recommendations tailored to complement items from your previous FairCart order."
+            elif rec_src == "saved_cart":
+                explanation = "Displaying recommendations tailored to complement items in your saved cart."
+            elif request.shopping_context.strip().lower() not in ("all", "general", ""):
+                explanation = f"Displaying curated recommendations aligned with your {request.shopping_context.capitalize()} setup."
+            else:
+                explanation = "Displaying popular workspace essentials from our catalogue with proven versatility."
+            audit_reason = f"Active cart is empty. Generated {len(recommendation_items)} {rec_src} recommendations at standard reference price without discount."
+            basket_margin = 0.0
 
         latency_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
 
@@ -280,11 +369,8 @@ class DecisionOrchestrator:
             cart_quote=cart_quote,
             eligible_offers_by_product_id=eligible_offers,
             deterministic_explanation=explanation,
-            decision_reason=(
-                f"Evaluated {len(recommendation_items)} candidates across cart; "
-                f"{len(eligible_offers)} satisfied margin floor ({request.margin_floor*100:.0f}%) and utility constraints."
-            ),
-            basket_gross_margin=cart_quote.basket_gross_margin,
+            decision_reason=audit_reason,
+            basket_gross_margin=basket_margin,
             fallback_applied=False,
             execution_latency_ms=latency_ms,
         )
