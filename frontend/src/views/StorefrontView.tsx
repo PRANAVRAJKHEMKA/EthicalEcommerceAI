@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Search, AlertCircle, RefreshCw, Layers, ShieldCheck, Cpu } from 'lucide-react';
-import { Product, RecommendationResponse, IncentiveResponse } from '../types.ts';
+import { Search, AlertCircle, RefreshCw, Layers, ShieldCheck, Cpu, Compass, Sparkles } from 'lucide-react';
+import { Product, RecommendationItem } from '../types.ts';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { RecommendationCard } from '../components/RecommendationCard.tsx';
 
@@ -9,14 +9,30 @@ interface StorefrontViewProps {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-  onAddToCart: (product: Product) => void;
+  onAddToCart: (
+    product: Product,
+    customPrice?: number,
+    discountPct?: number,
+    condition?: string
+  ) => void;
   cartQuantities: { [productId: string]: number };
-  recommendation?: RecommendationResponse | null;
-  incentive?: IncentiveResponse | null;
-  onAcceptRecommendation?: (rec: RecommendationResponse, inc: IncentiveResponse | null) => void;
-  onDismissRecommendation?: () => void;
-  isRecommendationDismissed?: boolean;
+  recommendations: RecommendationItem[];
+  eligibleOffersByProductId: Record<string, RecommendationItem>;
+  onAcceptRecommendation: (rec: RecommendationItem) => void;
+  onDismissRecommendation: (productId: string) => void;
+  dismissedIds: Set<string>;
+  shoppingContext: string;
+  onSelectShoppingContext: (context: string) => void;
 }
+
+const SHOPPING_CONTEXTS = [
+  { id: 'all', label: 'All Setups' },
+  { id: 'productivity', label: 'Productivity' },
+  { id: 'gaming', label: 'Gaming' },
+  { id: 'study', label: 'Study & Remote' },
+  { id: 'travel', label: 'Travel Ready' },
+  { id: 'wellness', label: 'Ergonomics' },
+];
 
 export function StorefrontView({
   products,
@@ -25,11 +41,13 @@ export function StorefrontView({
   onRetry,
   onAddToCart,
   cartQuantities,
-  recommendation,
-  incentive,
+  recommendations,
+  eligibleOffersByProductId,
   onAcceptRecommendation,
   onDismissRecommendation,
-  isRecommendationDismissed = false,
+  dismissedIds,
+  shoppingContext,
+  onSelectShoppingContext,
 }: StorefrontViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -53,12 +71,12 @@ export function StorefrontView({
     });
   }, [products, selectedCategory, searchQuery]);
 
-  const showRecommendationBanner =
-    Boolean(recommendation) &&
-    !isRecommendationDismissed &&
-    Boolean(onAcceptRecommendation) &&
-    Boolean(onDismissRecommendation) &&
-    !(cartQuantities[recommendation!.product_id] > 0);
+  // Filter recommendations: must not be dismissed, must not be currently in cart
+  const activeRecommendations = useMemo(() => {
+    return recommendations.filter(
+      (r) => !dismissedIds.has(r.product_id) && !(cartQuantities[r.product_id] > 0)
+    );
+  }, [recommendations, dismissedIds, cartQuantities]);
 
   return (
     <div className="w-full min-w-0 space-y-6 pb-16">
@@ -75,13 +93,13 @@ export function StorefrontView({
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
-            Explore 20 productivity tools and creator peripherals backed by a deterministic SQLite catalogue. As you shop, FairCart AI balances customer savings with real merchant margin safety.
+            Explore 24 productivity tools, creator peripherals, and desk essentials backed by a deterministic SQLite catalogue. As you shop, FairCart AI balances customer savings with real merchant margin safety.
           </p>
 
           <div className="pt-1 flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-500">
             <span className="inline-flex items-center space-x-1.5 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>20 Local SQLite Items</span>
+              <span>24 Local SQLite Items</span>
             </span>
             <span className="hidden sm:inline">·</span>
             <span className="inline-flex items-center space-x-1.5 font-medium">
@@ -97,20 +115,65 @@ export function StorefrontView({
         </div>
       </section>
 
-      {/* Dynamic Recommendation Banner (surfaced when cart has items) */}
-      {showRecommendationBanner && (
-        <section className="w-full">
-          <RecommendationCard
-            recommendation={recommendation!}
-            incentive={incentive ?? null}
-            onAccept={onAcceptRecommendation!}
-            onDismiss={onDismissRecommendation!}
-            isAdded={false}
-          />
+      {/* Inspectable Shopping Intent / Context Selector */}
+      <section className="bg-slate-100/80 rounded-xl p-3 sm:p-4 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center space-x-2">
+          <Compass className="w-4 h-4 text-indigo-600 shrink-0" />
+          <div>
+            <h3 className="text-xs font-bold text-slate-900">Shopping Intent / Use Case Context:</h3>
+            <p className="text-[11px] text-slate-500">
+              Select your primary setup goal to align candidate recommendations (No invasive tracking).
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {SHOPPING_CONTEXTS.map((ctx) => (
+            <button
+              key={ctx.id}
+              onClick={() => onSelectShoppingContext(ctx.id)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                shoppingContext === ctx.id
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200'
+              }`}
+            >
+              {ctx.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* Multi-Candidate Recommendation Section (Surfaced when cart has items) */}
+      {activeRecommendations.length > 0 && (
+        <section className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <h2 className="text-sm font-bold text-slate-900">
+                Recommended Complements ({activeRecommendations.length} tailored options)
+              </h2>
+            </div>
+            <span className="text-xs text-slate-400 font-mono">
+              Margin-Verified Offers
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeRecommendations.map((rec) => (
+              <RecommendationCard
+                key={rec.product_id}
+                recommendation={rec}
+                onAccept={onAcceptRecommendation}
+                onDismiss={onDismissRecommendation}
+                isAdded={false}
+              />
+            ))}
+          </div>
         </section>
       )}
 
-      {/* Catalog Search & Filter Controls */}
+      {/* Catalog Search & Category Filter Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 w-full min-w-0">
         {/* Category Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 w-full min-w-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -135,7 +198,7 @@ export function StorefrontView({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search 20 products..."
+            placeholder="Search 24 products..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all"
@@ -215,6 +278,7 @@ export function StorefrontView({
                   product={product}
                   onAddToCart={onAddToCart}
                   cartQuantity={cartQuantities[product.id] || 0}
+                  eligibleOffer={eligibleOffersByProductId[product.id]}
                 />
               ))}
             </div>

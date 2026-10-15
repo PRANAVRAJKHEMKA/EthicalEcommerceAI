@@ -4,8 +4,7 @@ import {
   CartItem,
   HealthStatus,
   DecisionResponse,
-  RecommendationResponse,
-  IncentiveResponse,
+  RecommendationItem,
 } from './types.ts';
 import { fetchHealth, fetchCatalog, fetchDecision } from './api.ts';
 import { Header } from './components/Header.tsx';
@@ -35,13 +34,51 @@ export default function App() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
 
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Cart state persisted to localStorage
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('faircart_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Shopping Intent Context persisted to localStorage
+  const [shoppingContext, setShoppingContext] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'all';
+    try {
+      return localStorage.getItem('faircart_shopping_context') || 'all';
+    } catch {
+      return 'all';
+    }
+  });
+
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
   // Decision Engine state
   const [decision, setDecision] = useState<DecisionResponse | null>(null);
-  const [dismissedRecommendationId, setDismissedRecommendationId] = useState<string | null>(null);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+  // Save cart to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('faircart_cart', JSON.stringify(cart));
+    } catch (e) {
+      console.error('Failed to save cart to localStorage', e);
+    }
+  }, [cart]);
+
+  // Save shoppingContext to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('faircart_shopping_context', shoppingContext);
+    } catch (e) {
+      console.error('Failed to save shopping context to localStorage', e);
+    }
+  }, [shoppingContext]);
 
   // Load health check on mount
   const checkHealth = useCallback(async () => {
@@ -77,7 +114,7 @@ export default function App() {
     loadProducts();
   }, [checkHealth, loadProducts]);
 
-  // Query Decision Engine whenever cart contents change
+  // Query Decision Engine whenever cart contents or shoppingContext change
   useEffect(() => {
     if (cart.length === 0) {
       setDecision(null);
@@ -86,12 +123,21 @@ export default function App() {
 
     let isMounted = true;
 
+    const appliedDiscounts: Record<string, number> = {};
+    cart.forEach((i) => {
+      if (i.appliedDiscountPct && i.appliedDiscountPct > 0) {
+        appliedDiscounts[i.product.id] = i.appliedDiscountPct;
+      }
+    });
+
     fetchDecision({
       session_id: 'sess-shopper',
       cart_items: cart.map((i) => ({
         product_id: i.product.id,
         quantity: i.quantity,
       })),
+      applied_discounts: appliedDiscounts,
+      shopping_context: shoppingContext,
       dwell_time_seconds: 30,
       margin_floor: 0.20,
       discount_cap: 0.20,
@@ -111,20 +157,40 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [cart]);
+  }, [cart, shoppingContext]);
 
   // Cart operations
-  const handleAddToCart = (product: Product) => {
+  const handleAddToCart = (
+    product: Product,
+    customPrice?: number,
+    discountPct?: number,
+    condition?: string
+  ) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
         return prev.map((item) =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+                discountedPrice: customPrice ?? item.discountedPrice,
+                appliedDiscountPct: discountPct ?? item.appliedDiscountPct,
+                appliedCondition: condition ?? item.appliedCondition,
+              }
             : item
         );
       }
-      return [...prev, { product, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          product,
+          quantity: 1,
+          discountedPrice: customPrice,
+          appliedDiscountPct: discountPct,
+          appliedCondition: condition,
+        },
+      ];
     });
   };
 
@@ -148,56 +214,39 @@ export default function App() {
 
   const handleClearCart = () => {
     setCart([]);
-    setDismissedRecommendationId(null);
+    setDismissedIds(new Set());
   };
 
   const handleCompleteOrder = () => {
     setCart([]);
-    setDismissedRecommendationId(null);
+    setDismissedIds(new Set());
   };
 
   // Handle accepting a complementary recommendation
-  const handleAcceptRecommendation = (
-    rec: RecommendationResponse,
-    incentive: IncentiveResponse | null
-  ) => {
-    const productObj = products.find((p) => p.id === rec.product_id);
-    if (!productObj) return;
+  const handleAcceptRecommendation = (rec: RecommendationItem) => {
+    const productObj = products.find((p) => p.id === rec.product_id) || {
+      id: rec.product_id,
+      name: rec.name,
+      category: rec.category,
+      subcategory: rec.subcategory,
+      description: rec.compatibility_reason,
+      reference_price: rec.reference_price,
+      cogs: rec.cogs ?? Math.round(rec.reference_price * 0.5 * 100) / 100,
+      inventory: rec.inventory,
+      complementary_ids: [],
+      image_url: rec.image_url,
+    };
 
-    const hasOffer = incentive?.is_offered ?? false;
-    const finalPrice = hasOffer ? incentive!.final_price : undefined;
-    const discountPct = hasOffer ? incentive!.discount_percentage : undefined;
-
-    setCart((prev) => {
-      const existing = prev.find((item) => item.product.id === productObj.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.product.id === productObj.id
-            ? {
-                ...item,
-                quantity: item.quantity + 1,
-                discountedPrice: finalPrice,
-                appliedDiscountPct: discountPct,
-              }
-            : item
-        );
-      }
-      return [
-        ...prev,
-        {
-          product: productObj,
-          quantity: 1,
-          discountedPrice: finalPrice,
-          appliedDiscountPct: discountPct,
-        },
-      ];
-    });
+    handleAddToCart(
+      productObj,
+      rec.is_offered ? rec.final_price : undefined,
+      rec.is_offered ? rec.discount_percentage : undefined,
+      rec.is_offered ? rec.conditions : undefined
+    );
   };
 
-  const handleDismissRecommendation = () => {
-    if (decision?.recommendation) {
-      setDismissedRecommendationId(decision.recommendation.product_id);
-    }
+  const handleDismissRecommendation = (productId: string) => {
+    setDismissedIds((prev) => new Set([...prev, productId]));
   };
 
   // Fast lookup of cart quantities by product id
@@ -213,13 +262,6 @@ export default function App() {
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
     [cart]
   );
-
-  const activeRecommendation =
-    decision &&
-    decision.recommendation &&
-    decision.recommendation.product_id !== dismissedRecommendationId
-      ? decision.recommendation
-      : null;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col justify-between overflow-x-hidden">
@@ -244,13 +286,13 @@ export default function App() {
               onRetry={loadProducts}
               onAddToCart={handleAddToCart}
               cartQuantities={cartQuantities}
-              recommendation={activeRecommendation}
-              incentive={decision?.incentive ?? null}
+              recommendations={decision?.recommendations || []}
+              eligibleOffersByProductId={decision?.eligible_offers_by_product_id || {}}
               onAcceptRecommendation={handleAcceptRecommendation}
               onDismissRecommendation={handleDismissRecommendation}
-              isRecommendationDismissed={
-                dismissedRecommendationId === decision?.recommendation?.product_id
-              }
+              dismissedIds={dismissedIds}
+              shoppingContext={shoppingContext}
+              onSelectShoppingContext={setShoppingContext}
             />
           ) : (
             <MerchantView products={products} />
@@ -270,13 +312,11 @@ export default function App() {
           setIsCartOpen(false);
           setIsCheckoutOpen(true);
         }}
-        recommendation={activeRecommendation}
-        incentive={decision?.incentive ?? null}
+        recommendations={decision?.recommendations || []}
         onAcceptRecommendation={handleAcceptRecommendation}
         onDismissRecommendation={handleDismissRecommendation}
-        isRecommendationDismissed={
-          dismissedRecommendationId === decision?.recommendation?.product_id
-        }
+        dismissedIds={dismissedIds}
+        basketQuote={decision?.cart_quote}
       />
 
       {/* Simulated Checkout Modal */}
@@ -285,6 +325,7 @@ export default function App() {
         onClose={() => setIsCheckoutOpen(false)}
         cart={cart}
         onCompleteOrder={handleCompleteOrder}
+        basketQuote={decision?.cart_quote}
       />
 
       {/* Footer */}

@@ -1,11 +1,12 @@
 import { CheckCircle2, X, ShoppingBag, ShieldCheck, Tag } from 'lucide-react';
-import { CartItem } from '../types.ts';
+import { CartItem, BasketQuote } from '../types.ts';
 
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cart: CartItem[];
   onCompleteOrder: () => void;
+  basketQuote?: BasketQuote | null;
 }
 
 export function CheckoutModal({
@@ -13,20 +14,30 @@ export function CheckoutModal({
   onClose,
   cart,
   onCompleteOrder,
+  basketQuote,
 }: CheckoutModalProps) {
   if (!isOpen) return null;
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = cart.reduce((sum, item) => {
-    const price = item.discountedPrice ?? item.product.reference_price;
-    return sum + price * item.quantity;
-  }, 0);
 
-  const standardSubtotal = cart.reduce(
-    (sum, item) => sum + item.product.reference_price * item.quantity,
-    0
-  );
-  const totalSavings = Math.max(0, standardSubtotal - subtotal);
+  // Authoritative totals from backend quote when available, fallback to client calculation
+  const subtotal = basketQuote
+    ? basketQuote.final_subtotal
+    : cart.reduce((sum, item) => {
+        const price = item.discountedPrice ?? item.product.reference_price;
+        return sum + price * item.quantity;
+      }, 0);
+
+  const standardSubtotal = basketQuote
+    ? basketQuote.standard_subtotal
+    : cart.reduce(
+        (sum, item) => sum + item.product.reference_price * item.quantity,
+        0
+      );
+
+  const totalSavings = basketQuote
+    ? basketQuote.total_savings
+    : Math.max(0, standardSubtotal - subtotal);
 
   const orderId = `FC-${Math.floor(100000 + Math.random() * 900000)}`;
   const orderTimestamp = new Date().toLocaleTimeString([], {
@@ -103,14 +114,21 @@ export function CheckoutModal({
                       <div className="flex items-center space-x-2.5 min-w-0 pr-2">
                         <ShoppingBag className="w-4 h-4 text-slate-400 shrink-0" />
                         <div className="truncate">
-                          <span className="font-semibold text-slate-900">
-                            {item.product.name}
-                          </span>
-                          <span className="text-slate-400 ml-1.5">x{item.quantity}</span>
-                          {isDiscounted && (
-                            <span className="ml-2 text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.5 rounded">
-                              Bundle Deal
+                          <div className="flex items-center space-x-1.5">
+                            <span className="font-semibold text-slate-900 truncate">
+                              {item.product.name}
                             </span>
+                            <span className="text-slate-400 text-[11px]">x{item.quantity}</span>
+                            {isDiscounted && (
+                              <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                                Bundle Deal
+                              </span>
+                            )}
+                          </div>
+                          {isDiscounted && item.appliedCondition && (
+                            <p className="text-[10px] text-indigo-700 font-medium truncate mt-0.5">
+                              {item.appliedCondition}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -154,6 +172,14 @@ export function CheckoutModal({
                   ${subtotal.toFixed(2)}
                 </span>
               </div>
+              {basketQuote && (
+                <div className="flex justify-between text-[11px] text-slate-500 font-mono pt-1 border-t border-slate-200/50">
+                  <span>Basket Gross Margin</span>
+                  <span className="font-semibold text-indigo-700">
+                    {(basketQuote.basket_gross_margin * 100).toFixed(1)}%
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

@@ -15,6 +15,9 @@ class ProductEntity:
     inventory: int
     complementary_ids: tuple[str, ...]
     image_url: str
+    subcategory: str = ""
+    tags: tuple[str, ...] = ()
+    use_cases: tuple[str, ...] = ()
 
     @property
     def reference_price(self) -> float:
@@ -29,16 +32,19 @@ class ProductEntity:
             id=self.id,
             name=self.name,
             category=self.category,
+            subcategory=self.subcategory,
             description=self.description,
             reference_price=self.reference_price,
             cogs=self.cogs,
             inventory=self.inventory,
             complementary_ids=list(self.complementary_ids),
+            tags=list(self.tags),
+            use_cases=list(self.use_cases),
             image_url=self.image_url,
         )
 
 class CatalogRepository:
-    """Repository handling all database queries for the product catalog."""
+    """Repository handling all database queries for the product catalog and merchant settings."""
 
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path
@@ -46,6 +52,10 @@ class CatalogRepository:
     def _row_to_entity(self, row: sqlite3.Row) -> ProductEntity:
         """Converts an SQLite row into an immutable ProductEntity with integer cents."""
         comp_ids = tuple(cid.strip() for cid in row["complementary_ids"].split(",") if cid.strip())
+        tags = tuple(t.strip() for t in (row["tags"] if "tags" in row.keys() and row["tags"] else "").split(",") if t.strip())
+        use_cases = tuple(u.strip() for u in (row["use_cases"] if "use_cases" in row.keys() and row["use_cases"] else "").split(",") if u.strip())
+        subcategory = row["subcategory"] if "subcategory" in row.keys() and row["subcategory"] else row["category"]
+
         return ProductEntity(
             id=row["id"],
             name=row["name"],
@@ -56,6 +66,9 @@ class CatalogRepository:
             inventory=int(row["inventory"]),
             complementary_ids=comp_ids,
             image_url=row["image_url"],
+            subcategory=subcategory,
+            tags=tags,
+            use_cases=use_cases,
         )
 
     def _row_to_product(self, row: sqlite3.Row) -> Product:
@@ -119,5 +132,31 @@ class CatalogRepository:
             cursor.execute(f"SELECT * FROM products WHERE id IN ({placeholders});", product_ids)
             rows = cursor.fetchall()
             return [self._row_to_entity(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_merchant_settings(self) -> dict[str, float]:
+        """Retrieves merchant policy settings (margin floor, discount cap) from SQLite."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM merchant_settings;")
+            rows = cursor.fetchall()
+            return {r["key"]: float(r["value"]) for r in rows}
+        except Exception:
+            return {"margin_floor": 0.20, "discount_cap": 0.20}
+        finally:
+            conn.close()
+
+    def update_merchant_setting(self, key: str, value: float) -> None:
+        """Updates a merchant policy setting in SQLite."""
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO merchant_settings (key, value, updated_at)
+                VALUES (?, ?, datetime('now'));
+            """, (key, value))
+            conn.commit()
         finally:
             conn.close()

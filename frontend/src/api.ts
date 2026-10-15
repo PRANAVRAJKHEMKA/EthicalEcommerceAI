@@ -1,4 +1,11 @@
-import { Product, HealthStatus, DecisionRequest, DecisionResponse } from './types.ts';
+import {
+  Product,
+  HealthStatus,
+  DecisionRequest,
+  DecisionResponse,
+  QuoteRequest,
+  BasketQuote,
+} from './types.ts';
 
 const API_BASE = 'http://127.0.0.1:8000';
 
@@ -28,6 +35,20 @@ export async function fetchDecision(req: DecisionRequest): Promise<DecisionRespo
   });
   if (!res.ok) {
     throw new Error(`Decision engine request failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchQuote(req: QuoteRequest): Promise<BasketQuote> {
+  const res = await fetch(`${API_BASE}/api/v1/quote`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    throw new Error(`Basket quote request failed with status ${res.status}`);
   }
   return res.json();
 }

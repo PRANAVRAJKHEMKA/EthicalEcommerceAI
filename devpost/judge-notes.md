@@ -337,6 +337,39 @@
 
 ---
 
+### DEC-017: Multi-Candidate Complementary Recommendations, End-to-End Consistent Pricing, and Context-Aware Intent Ranking
+
+- **What We Decided:**
+  1. **Multi-Candidate Complementary Recommendations:** Upgraded Engine A (`recommender.py`) to return 3–5 diverse complementary recommendations per cart state, enforcing category/subcategory diversity so shoppers receive a balanced set of complementary choices (e.g., cables, wrist rests, keycaps, and stands) rather than duplicate items from a single category.
+  2. **End-to-End Authoritative Pricing Consistency:** Established the FastAPI backend as the single authoritative source of financial truth. When an item qualifies for a bundle deal, the exact same final price, savings amount, percentage discount, and conditions are displayed across all four UI touchpoints: the catalogue card (`ProductCard`), the recommendation card (`RecommendationCard`), the cart drawer line item (`CartDrawer`), and the checkout receipt modal (`CheckoutModal`). No React component performs independent pricing math.
+  3. **Independent Candidate Incentive Optimization:** Engine B (`optimizer.py`) independently evaluates each recommendation candidate against merchant gross margin floors and discount caps. Items that satisfy merchant constraints receive bundle savings; items that would violate margin floors are presented transparently at standard reference price with "Standard price · No discount applied".
+  4. **Context-Aware Intent Ranking Without Tracking:** Enriched all 24 catalogue items with `subcategory`, `tags`, and `use_cases`. Added a user-controlled Shopping Intent context selector (`all`, `productivity`, `gaming`, `study`, `travel`, `wellness`) on the storefront. Intent matching awards an explainable +0.25 affinity boost without invasive tracking cookies, third-party trackers, or personal data collection.
+  5. **Authoritative Basket Quotes (`/api/v1/quote`):** Created a dedicated integer-cent quote calculation engine that returns exact line totals, subtotals, bundle savings, and basket gross margin for any cart state and applied discounts.
+  6. **Deployment & Persistence Planning:** Authored `devpost/deployment-and-persistence.md` detailing public accessibility options (unified container vs decoupled hosts) and persistence architecture (localStorage client state + local SQLite DB with WAL mode).
+
+- **Why We Decided It and What Problem It Solves:**
+  - Solves the pricing discrepancy where recommendation cards showed discounted prices while the corresponding catalogue cards still displayed standard prices, eliminating shopper confusion.
+  - Solves recommendation fatigue caused by single-item suggestions by providing 3–5 diverse options tailored to the shopper's active setup intent.
+  - Solves the cold-start intent problem ethically by providing user-selected intent filters rather than invasive surveillance.
+
+- **Alternatives Considered:**
+  - *Client-side price calculation in React:* Rejected because floating-point drift and separate business logic in the browser cause rounding discrepancies and destroy financial auditability.
+  - *Single-candidate recommendations:* Rejected because shoppers frequently reject the first recommendation; 3–5 diverse candidates significantly increase relevance without cluttering the UI.
+  - *Browser cookies or user tracking:* Rejected in alignment with FairCart AI's ethical commerce mission.
+
+- **Impact:**
+  - Catalogue expanded to 24 items in SQLite with full tag and use-case metadata.
+  - 26/26 backend automated unit tests passing in 0.22s.
+  - Frontend production build succeeds cleanly (`tsc -b && vite build`) in 9.1s.
+  - 7 comprehensive browser screenshots verified via Chrome DevTools Protocol.
+
+- **How to Explain to Judges:**
+  "In typical e-commerce, recommendations either push a single high-margin item or blanket-discount the entire store. In FairCart AI, when you add a mechanical keyboard, Engine A finds 3 to 4 diverse complements—from wrist rests to coiled cables and laptop stands—aligned with your chosen shopping setup. Engine B checks each one individually against store profit margins. And crucially, whatever bundle price FairCart offers is guaranteed identical whether you look at the recommendation card, the catalogue grid, your cart drawer, or your final receipt. Everything is calculated in exact cents by the backend with zero dark patterns."
+
+- **Status:** **Implemented & Tested (in Milestone 3B)**.
+
+---
+
 ## 2. Pending Decisions
 
 - **PEN-001 (Spec Stage):** Specific Scikit-Learn Model architecture for purchase propensity ranking (Heuristic Baseline for MVP; scikit-learn classifier designed as optional pluggable extension).
@@ -419,17 +452,20 @@
 
 | Feature | Scope / PRD Ref | Implementation State | Verification State |
 | :--- | :--- | :--- | :--- |
-| **Realistic 20-Product Catalog** | PRD §4.A | **Implemented (SQLite)** | **Passed (Seeded 20 items)** |
+| **Realistic 24-Product Catalog** | PRD §4.A | **Implemented (SQLite)** | **Passed (Seeded 24 items with tags & use cases)** |
 | **Catalog Repository Layer** | Spec §6.1 | **Implemented** | **Passed (6 Unittest checks)** |
-| **Operational Health API (`/api/v1/health`)**| Spec §5.1 | **Implemented (FastAPI)** | **Passed (HTTP 200 Schema Check)** |
-| **Catalog API (`/api/v1/catalog`)** | Spec §5.2 | **Implemented (FastAPI)** | **Passed (4 Unittest checks)** |
-| **Interactive Cart & Drawer** | PRD §4.A | **Implemented (React)** | **Passed (State & UI verified)** |
+| **Operational Health API (`/api/v1/health`)**| Spec §5.1 | **Implemented (FastAPI)** | **Passed (HTTP 200 Schema Check: 24 items)** |
+| **Catalog API (`/api/v1/catalog`)** | Spec §5.2 | **Implemented (FastAPI)** | **Passed (5 Unittest checks)** |
+| **Interactive Cart & Drawer** | PRD §4.A | **Implemented (React)** | **Passed (State & UI verified with localStorage)** |
 | **Storefront & Category Filters** | PRD §2 (View 1) | **Implemented (React)** | **Passed (Dynamic categories & search)** |
-| **Simulated Zero-Payment Checkout** | PRD §1.6 | **Implemented (React Modal)** | **Passed (Itemized receipt & reset)** |
+| **Shopping Intent Context Selector** | PRD §4.B | **Implemented (React)** | **Passed (Productivity, Gaming, Study, etc.)** |
+| **Simulated Zero-Payment Checkout** | PRD §1.6 | **Implemented (React Modal)** | **Passed (Itemized receipt & reset verified)** |
 | **Merchant Console Scaffold** | PRD §2 (View 2) | **Implemented (React Preview)** | **Passed (Catalog stats & sliders)** |
-| **Engine A: Content Recommender** | PRD §4.B | **Implemented (`recommender.py`)** | **Passed (Affinity & stock tests)** |
-| **Engine B: Margin-Constrained Optimizer** | PRD §4.C | **Implemented (`optimizer.py`)** | **Passed (Integer cents & margin floor)** |
+| **Engine A: Multi-Candidate Recommender** | PRD §4.B | **Implemented (`recommender.py`)** | **Passed (3-5 ranked candidates with diversity)** |
+| **Engine B: Margin-Constrained Optimizer** | PRD §4.C | **Implemented (`optimizer.py`)** | **Passed (Independent candidate evaluation)** |
 | **Engine C: Decision API (`/api/v1/decision`)**| PRD §4.C | **Implemented (`orchestrator.py`)** | **Passed (Synchronous < 25ms SLA)** |
+| **Authoritative Basket Quotes (`/api/v1/quote`)**| Spec §5.3 | **Implemented (`orchestrator.py`)** | **Passed (Exact cents line totals & margin)** |
+| **End-to-End Consistent Pricing** | PRD §4.D | **Implemented (Frontend & Backend)** | **Passed (Verified across 4 UI touchpoints)** |
 | **Gemini Explanation & Copy** | PRD §4.E | Planned (Milestone 4) | Not Run |
 | **Deterministic Offline Fallback** | PRD §4.E | **Implemented (`orchestrator.py`)** | **Passed (Option 1 factual copy)** |
 | **Transparent Shopper Offer Card** | PRD §4.D | **Implemented (`RecommendationCard.tsx`)** | **Passed (CDP screenshots verified)** |
@@ -437,7 +473,7 @@
 | **Merchant Policy Sliders (Interactive)** | PRD §2 | Planned (Milestone 5) | Not Run |
 | **Live Decision Audit Log Table** | PRD §2 | Planned (Milestone 5) | Not Run |
 | **3-Policy Synthetic Simulation Engine**| PRD §4.F | Planned (Milestone 5) | Not Run |
-| **Automated Financial Invariant Tests** | PRD §7 | **Implemented (`test_decision_engine.py`)** | **Passed (21/21 suite tests)** |
+| **Automated Financial Invariant Tests** | PRD §7 | **Implemented (`test_decision_engine.py`)** | **Passed (26/26 suite tests)** |
 
 ---
 

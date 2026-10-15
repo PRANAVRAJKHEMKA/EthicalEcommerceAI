@@ -37,6 +37,15 @@ Build mode: learn
   Verify (mechanical): Run invariant tests verifying `gross_margin >= floor` and `final_price <= ref_price`.
   Commit: `Milestone 3: Local decision engine, margin-preserving optimizer, and transparent offer card`
 
+- [x] **3B. Multi-Recommendation, Consistent Pricing, & Context-Aware Optimization (Milestone 3B)**
+  Becomes usable: Storefront offers 3–5 diverse complementary recommendations per basket, user-controlled shopping intent context (productivity, gaming, study, travel, wellness), authoritative basket quote API, and 100% price agreement across catalogue cards, recommendation cards, cart drawer, and checkout receipt.
+  Why now: Corrects pricing drift, eliminates single-item recommendation fatigue, and guarantees complete financial consistency across the shopper journey.
+  PRD ref: `prd.md > Feature B, C, D`
+  Spec ref: `spec.md > 5.3 /decision, /quote`, `spec.md > 6. Component 2, 3, 4`
+  Build: Expand catalog to 24 items with tags/use cases; upgrade Engine A with category/subcategory diversity; upgrade Engine B for independent candidate evaluation; implement authoritative `POST /api/v1/quote`; author `devpost/deployment-and-persistence.md`; wire `localStorage` cart persistence; verify with 7 CDP browser screenshots.
+  Verify (mechanical): Run 26/26 backend unit tests, build frontend production bundle (`tsc -b && vite build`), verify CDP screenshots of 4 UI touchpoints.
+  Commit: `Milestone 3B: Multi-recommendation, consistent pricing, and context-aware optimization`
+
 - [ ] **4. Asynchronous Gemini Copy & Transparency Modal (Milestone 3)**
   Becomes usable: Recommendation card asynchronously enriches its copy via Gemini, with instant offline template fallback if the key is missing.
   Why now: Delivers responsible AI transparency without blocking the critical commerce path.

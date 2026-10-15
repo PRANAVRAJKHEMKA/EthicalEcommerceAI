@@ -1,5 +1,5 @@
-import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, RotateCcw, ShieldCheck, Tag } from 'lucide-react';
-import { CartItem, RecommendationResponse, IncentiveResponse } from '../types.ts';
+import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, RotateCcw, ShieldCheck, Tag, Sparkles } from 'lucide-react';
+import { CartItem, RecommendationItem, BasketQuote } from '../types.ts';
 import { RecommendationCard } from './RecommendationCard.tsx';
 
 interface CartDrawerProps {
@@ -10,11 +10,11 @@ interface CartDrawerProps {
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
   onOpenCheckout: () => void;
-  recommendation: RecommendationResponse | null;
-  incentive: IncentiveResponse | null;
-  onAcceptRecommendation: (rec: RecommendationResponse, inc: IncentiveResponse | null) => void;
-  onDismissRecommendation: () => void;
-  isRecommendationDismissed: boolean;
+  recommendations: RecommendationItem[];
+  onAcceptRecommendation: (rec: RecommendationItem) => void;
+  onDismissRecommendation: (productId: string) => void;
+  dismissedIds: Set<string>;
+  basketQuote?: BasketQuote | null;
 }
 
 export function CartDrawer({
@@ -25,33 +25,41 @@ export function CartDrawer({
   onRemoveItem,
   onClearCart,
   onOpenCheckout,
-  recommendation,
-  incentive,
+  recommendations,
   onAcceptRecommendation,
   onDismissRecommendation,
-  isRecommendationDismissed,
+  dismissedIds,
+  basketQuote,
 }: CartDrawerProps) {
   if (!isOpen) return null;
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = cart.reduce((sum, item) => {
-    const price = item.discountedPrice ?? item.product.reference_price;
-    return sum + price * item.quantity;
-  }, 0);
 
-  const standardSubtotal = cart.reduce(
-    (sum, item) => sum + item.product.reference_price * item.quantity,
-    0
+  // Authoritative totals from backend quote when available, fallback to client calculation
+  const subtotal = basketQuote
+    ? basketQuote.final_subtotal
+    : cart.reduce((sum, item) => {
+        const price = item.discountedPrice ?? item.product.reference_price;
+        return sum + price * item.quantity;
+      }, 0);
+
+  const standardSubtotal = basketQuote
+    ? basketQuote.standard_subtotal
+    : cart.reduce(
+        (sum, item) => sum + item.product.reference_price * item.quantity,
+        0
+      );
+
+  const totalSavings = basketQuote
+    ? basketQuote.total_savings
+    : Math.max(0, standardSubtotal - subtotal);
+
+  // Filter recommendations: not dismissed and not already in cart
+  const activeRecommendations = recommendations.filter(
+    (rec) =>
+      !dismissedIds.has(rec.product_id) &&
+      !cart.some((item) => item.product.id === rec.product_id)
   );
-  const totalSavings = Math.max(0, standardSubtotal - subtotal);
-
-  // Check if recommended item is already in cart
-  const isRecommendedItemInCart = recommendation
-    ? cart.some((i) => i.product.id === recommendation.product_id)
-    : false;
-
-  const showRecommendation =
-    recommendation !== null && !isRecommendationDismissed && !isRecommendedItemInCart;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -92,7 +100,7 @@ export function CartDrawer({
                 <div>
                   <h3 className="font-semibold text-slate-800 text-sm">Your cart is empty</h3>
                   <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">
-                    Explore our 20 curated tech accessories and peripherals to experience FairCart AI.
+                    Explore our 24 curated tech accessories and peripherals to experience FairCart AI.
                   </p>
                 </div>
                 <button
@@ -160,6 +168,13 @@ export function CartDrawer({
                             )}
                           </div>
 
+                          {/* Applied bundle condition note */}
+                          {hasDiscount && item.appliedCondition && (
+                            <p className="text-[10px] text-indigo-700 font-medium truncate mt-0.5">
+                              {item.appliedCondition}
+                            </p>
+                          )}
+
                           <div className="flex items-center justify-between mt-2">
                             {/* Quantity Controls */}
                             <div className="flex items-center border border-slate-200 rounded-md overflow-hidden bg-slate-50">
@@ -193,16 +208,25 @@ export function CartDrawer({
                   })}
                 </div>
 
-                {/* FairCart Recommendation Section */}
-                {showRecommendation && (
-                  <div className="pt-2">
-                    <RecommendationCard
-                      recommendation={recommendation}
-                      incentive={incentive}
-                      onAccept={onAcceptRecommendation}
-                      onDismiss={onDismissRecommendation}
-                      isAdded={false}
-                    />
+                {/* FairCart Recommendations Section Inside Drawer */}
+                {activeRecommendations.length > 0 && (
+                  <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                    <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-800">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Recommended Complements</span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {activeRecommendations.slice(0, 3).map((rec) => (
+                        <RecommendationCard
+                          key={rec.product_id}
+                          recommendation={rec}
+                          onAccept={onAcceptRecommendation}
+                          onDismiss={onDismissRecommendation}
+                          isAdded={false}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -229,6 +253,14 @@ export function CartDrawer({
                     ${subtotal.toFixed(2)}
                   </span>
                 </div>
+                {basketQuote && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
+                    <span>Verified Gross Margin</span>
+                    <span className="font-semibold text-indigo-700">
+                      {(basketQuote.basket_gross_margin * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Ethical Commerce Trust Banner */}

@@ -32,20 +32,20 @@ class TestCatalogAPI(unittest.TestCase):
                 pass
 
     def test_catalog_endpoint_returns_twenty_products(self):
-        """Verifies GET /api/v1/catalog returns 200 OK and exactly 20 validated products."""
+        """Verifies GET /api/v1/catalog returns 200 OK and all validated catalog products."""
         response = self.client.get("/api/v1/catalog")
         self.assertEqual(response.status_code, 200)
         
         data = response.json()
         self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 20)
+        self.assertGreaterEqual(len(data), 20)
         
         # Verify schema of the first item
         first_item = data[0]
         required_fields = [
-            "id", "name", "category", "description",
+            "id", "name", "category", "subcategory", "description",
             "reference_price", "cogs", "inventory",
-            "complementary_ids", "image_url"
+            "complementary_ids", "tags", "use_cases", "image_url"
         ]
         for field in required_fields:
             self.assertIn(field, first_item, f"Missing required field: {field}")

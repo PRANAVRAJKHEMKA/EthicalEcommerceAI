@@ -33,14 +33,14 @@ class TestFoundationAndHealth(unittest.TestCase):
                 pass
 
     def test_database_has_twenty_products(self):
-        """Verifies that the catalog contains exactly 20 coherent products."""
+        """Verifies that the catalog contains all verified seed products."""
         count = self.repo.count_products()
-        self.assertEqual(count, 20, f"Expected 20 products, found {count}")
+        self.assertEqual(count, len(SAMPLE_PRODUCTS), f"Expected {len(SAMPLE_PRODUCTS)} products, found {count}")
 
     def test_product_schema_and_financial_positivity(self):
         """Verifies that all seeded products have valid prices, non-negative COGS, and stock."""
         products = self.repo.get_all_products()
-        self.assertEqual(len(products), 20)
+        self.assertEqual(len(products), len(SAMPLE_PRODUCTS))
         
         for p in products:
             self.assertTrue(p.id.startswith("item-"), f"Invalid ID format: {p.id}")
@@ -49,6 +49,7 @@ class TestFoundationAndHealth(unittest.TestCase):
             self.assertLess(p.cogs, p.reference_price, f"COGS should be less than reference price for profitability: {p.id}")
             self.assertGreater(p.inventory, 0, f"Initial inventory must be positive: {p.id}")
             self.assertTrue(len(p.complementary_ids) > 0, f"Must have complementary accessories: {p.id}")
+            self.assertTrue(len(p.use_cases) > 0, f"Must have supported use cases: {p.id}")
 
     def test_repository_get_by_id(self):
         """Verifies single item retrieval and integer-cent precision."""

@@ -309,5 +309,120 @@ class TestDecisionEngine(unittest.TestCase):
         self.assertIn("execution_latency_ms", data)
         self.assertLess(data["execution_latency_ms"], 25.0)
 
+    # =========================================================================
+    # Milestone 3B Multi-Recommendation & Consistency Tests
+    # =========================================================================
+
+    def test_multi_recommendations_count_and_diversity(self):
+        """Engine A & C return 3-5 ranked candidates with diverse functional categories."""
+        req = DecisionRequest(
+            session_id="test-multi-rec",
+            cart_items=[CartItemInput(product_id="item-001", quantity=1)],
+            shopping_context="productivity",
+        )
+        res = self.orchestrator.process_decision(req)
+        self.assertGreaterEqual(len(res.recommendations), 3)
+        self.assertLessEqual(len(res.recommendations), 5)
+
+        # Ensure no candidate is item-001 (item in cart)
+        cand_ids = [r.product_id for r in res.recommendations]
+        self.assertNotIn("item-001", cand_ids)
+
+        # Ensure diversity: at least 2 distinct categories among top candidates
+        categories = {r.category for r in res.recommendations}
+        self.assertGreaterEqual(len(categories), 2)
+
+    def test_context_aware_shopping_intent_ranking(self):
+        """Shopping context (e.g. gaming, travel) shifts candidate ranking appropriately."""
+        catalog = self.repo.get_all_entities()
+        cart = [(self.repo.get_entity_by_id("item-001"), 1)]
+
+        # Context: Gaming
+        gaming_recs = self.recommender.find_recommendations(
+            cart_items=cart,
+            catalog=catalog,
+            shopping_context="gaming",
+            top_k=4,
+        )
+        gaming_ids = [r.product.id for r in gaming_recs]
+        # Gaming mouse or desk mat should appear in recommendations
+        has_gaming_support = any("gaming" in r.product.use_cases for r in gaming_recs)
+        self.assertTrue(has_gaming_support)
+
+        # Context: Travel
+        travel_recs = self.recommender.find_recommendations(
+            cart_items=cart,
+            catalog=catalog,
+            shopping_context="travel",
+            top_k=4,
+        )
+        has_travel_support = any("travel" in r.product.use_cases for r in travel_recs)
+        self.assertTrue(has_travel_support)
+
+    def test_independent_candidate_incentives(self):
+        """Each candidate's discount eligibility is evaluated independently by Engine B."""
+        req = DecisionRequest(
+            session_id="test-indep-incentives",
+            cart_items=[CartItemInput(product_id="item-001", quantity=1)],
+            margin_floor=0.20,
+            discount_cap=0.20,
+        )
+        res = self.orchestrator.process_decision(req)
+        self.assertGreaterEqual(len(res.recommendations), 3)
+
+        # Each recommendation must have authoritative pricing fields
+        for rec in res.recommendations:
+            self.assertGreater(rec.reference_price, 0.0)
+            self.assertGreater(rec.final_price, 0.0)
+            self.assertLessEqual(rec.final_price, rec.reference_price)
+            self.assertGreaterEqual(rec.savings, 0.0)
+            if rec.is_offered:
+                self.assertGreater(rec.savings, 0.0)
+                self.assertIn("Valid when bundled with", rec.conditions)
+            else:
+                self.assertEqual(rec.savings, 0.0)
+                self.assertEqual(rec.final_price, rec.reference_price)
+                self.assertIn("Standard price", rec.conditions)
+
+    def test_authoritative_basket_quote_endpoint(self):
+        """POST /api/v1/quote computes exact integer-cent line totals, subtotal, and savings."""
+        payload = {
+            "cart_items": [
+                {"product_id": "item-001", "quantity": 1},
+                {"product_id": "item-002", "quantity": 1},
+            ],
+            "applied_discounts": {
+                "item-002": 0.20  # 20% bundle discount on $25.00 -> $5.00 off
+            }
+        }
+        res = self.client.post("/api/v1/quote", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+
+        # Item 1: $80.00; Item 2: $25.00 - $5.00 = $20.00
+        # Standard: $105.00, Final: $100.00, Savings: $5.00
+        self.assertEqual(data["standard_subtotal"], 105.00)
+        self.assertEqual(data["final_subtotal"], 100.00)
+        self.assertEqual(data["total_savings"], 5.00)
+        self.assertGreater(data["basket_gross_margin"], 0.20)
+
+    def test_consistent_eligible_offers_map(self):
+        """Eligible offers map provides exact matching prices for the storefront cards."""
+        req = DecisionRequest(
+            session_id="test-consistency",
+            cart_items=[CartItemInput(product_id="item-001", quantity=1)],
+            margin_floor=0.20,
+            discount_cap=0.20,
+        )
+        res = self.orchestrator.process_decision(req)
+        
+        # Any product in eligible_offers_by_product_id must match its corresponding recommendation
+        for pid, offer in res.eligible_offers_by_product_id.items():
+            matching_rec = next((r for r in res.recommendations if r.product_id == pid), None)
+            self.assertIsNotNone(matching_rec)
+            self.assertEqual(offer.final_price, matching_rec.final_price)
+            self.assertEqual(offer.savings, matching_rec.savings)
+            self.assertEqual(offer.conditions, matching_rec.conditions)
+
 if __name__ == "__main__":
     unittest.main()

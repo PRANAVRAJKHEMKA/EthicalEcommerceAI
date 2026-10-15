@@ -2,11 +2,14 @@ export interface Product {
   id: string;
   name: string;
   category: string;
+  subcategory?: string;
   description: string;
   reference_price: number;
   cogs: number;
   inventory: number;
   complementary_ids: string[];
+  tags?: string[];
+  use_cases?: string[];
   image_url: string;
 }
 
@@ -15,6 +18,7 @@ export interface CartItem {
   quantity: number;
   discountedPrice?: number;
   appliedDiscountPct?: number;
+  appliedCondition?: string;
 }
 
 export interface HealthStatus {
@@ -33,20 +37,38 @@ export interface CartItemInput {
 export interface DecisionRequest {
   session_id?: string;
   cart_items: CartItemInput[];
+  applied_discounts?: Record<string, number>;
+  shopping_context?: string;
   dwell_time_seconds?: number;
   margin_floor?: number;
   discount_cap?: number;
 }
 
-export interface RecommendationResponse {
+export interface RecommendationItem {
   product_id: string;
   name: string;
   category: string;
+  subcategory?: string;
+  tags?: string[];
+  use_cases?: string[];
   reference_price: number;
+  cogs?: number;
+  inventory: number;
+  image_url: string;
   affinity_score: number;
   compatibility_reason: string;
-  image_url: string;
+  is_offered: boolean;
+  tier: string;
+  discount_percentage: number;
+  final_price: number;
+  savings: number;
+  currency: string;
+  conditions: string;
+  basket_gross_margin: number;
+  decision_reason: string;
 }
+
+export type RecommendationResponse = RecommendationItem;
 
 export interface IncentiveResponse {
   is_offered: boolean;
@@ -59,12 +81,41 @@ export interface IncentiveResponse {
   conditions: string;
 }
 
+export interface BasketQuoteItem {
+  product_id: string;
+  name: string;
+  quantity: number;
+  reference_price: number;
+  unit_price: number;
+  discount_percentage: number;
+  savings: number;
+  line_total: number;
+  applied_condition: string;
+}
+
+export interface BasketQuote {
+  items: BasketQuoteItem[];
+  standard_subtotal: number;
+  final_subtotal: number;
+  total_savings: number;
+  basket_gross_margin: number;
+}
+
+export interface QuoteRequest {
+  cart_items: CartItemInput[];
+  applied_discounts?: Record<string, number>;
+}
+
 export interface DecisionResponse {
   request_id: string;
   session_id: string;
+  shopping_context: string;
   decision: 'OFFER_APPLIED' | 'NO_OFFER';
-  recommendation: RecommendationResponse | null;
+  recommendations: RecommendationItem[];
+  recommendation: RecommendationItem | null;
   incentive: IncentiveResponse | null;
+  cart_quote?: BasketQuote | null;
+  eligible_offers_by_product_id: Record<string, RecommendationItem>;
   deterministic_explanation: string;
   decision_reason: string;
   basket_gross_margin: number;
