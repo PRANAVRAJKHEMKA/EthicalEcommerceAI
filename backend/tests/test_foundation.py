@@ -99,6 +99,19 @@ class TestFoundationAndHealth(unittest.TestCase):
         self.assertIn("documentation", data)
         self.assertIn("health", data)
 
+    def test_cors_preflight_headers_with_allowed_origin(self):
+        """Verifies CORS preflight OPTIONS request returns correct origin and credential headers."""
+        response = self.client.options(
+            "/api/v1/catalog",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("access-control-allow-origin"), "http://localhost:5173")
+        self.assertEqual(response.headers.get("access-control-allow-credentials"), "true")
+
     def test_merchant_settings_endpoint(self):
         """Verifies GET and POST /api/v1/settings for merchant margin floor and discount cap."""
         # Read current settings

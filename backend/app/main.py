@@ -1,5 +1,6 @@
 import time
 import re
+import logging
 from collections import defaultdict
 from pathlib import Path
 
@@ -74,9 +75,19 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+logger = logging.getLogger("faircart.api")
+
 # Parse and configure production-safe CORS origins
+# Note: Because allow_credentials=True is required for HttpOnly session cookies,
+# production deployments must explicitly specify trusted frontend origins rather than wildcard '*'.
 cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 if "*" in cors_origins:
+    if settings.ENVIRONMENT.lower() in ("production", "prod"):
+        logger.warning(
+            "CORS_ORIGINS contains wildcard '*' in production mode while allow_credentials=True. "
+            "Browsers reject credentialed requests with wildcard origins per CORS security standards. "
+            "Explicit trusted frontend origins should be configured."
+        )
     cors_origins = ["*"]
 
 app.add_middleware(
