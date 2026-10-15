@@ -1,189 +1,236 @@
-"""Offline Model & Ranker Quality Evaluation Harness for FairCart AI
+"""Offline Model & Ranker Quality Evaluation Harness for FairCart AI (Milestone 4B Part 9)
 
-Compares the Improved Multi-Signal Whole-Basket Ranker against the Baseline 1-to-1 Recommender.
-Uses held-out synthetic baskets (seed=100) to evaluate:
-- HitRate@K: Proportion of baskets where the held-out co-purchased item is in top-K.
-- Recall@K: Proportion of relevant held-out items retrieved.
-- NDCG@K: Normalized Discounted Cumulative Gain (ranking position sensitivity).
-- Catalog Coverage: Percentage of catalog accessories recommended across all test sessions.
-- Category Diversity: Average number of unique categories present in top-K recommendations.
+Compares three recommendation systems on the same 400 held-out synthetic test sessions:
+1. Baseline Recommender: 1-to-1 static complementary items from primary product.
+2. Deterministic Hybrid Ranker: S_hybrid = 0.30*C + 0.30*A + 0.20*U + 0.15*E + 0.05*P with MMR.
+3. Supervised ML Ranker: HistGradientBoostingClassifier trained on 1,600 training sessions with MMR.
 
-DISCLAIMER & LIMITATIONS:
-This evaluation uses synthetic transactions generated from archetypal desk configurations.
-It validates pipeline mechanics, multi-item association integration, and diversity guardrails.
-It does NOT prove real-world consumer conversion uplift or production commercial ROI.
+Metrics Computed:
+- HitRate@K: Proportion of sessions with at least one target co-purchased item in Top-K.
+- Recall@K: Mean fraction of target relevant items retrieved in Top-K.
+- NDCG@K: Normalized Discounted Cumulative Gain with binary relevance gains.
+- Catalog Coverage (%): Unique items recommended / total catalog.
+- Pairwise Attribute Similarity: Mean pairwise similarity among recommendations (lower = more diverse).
+
+SCIENTIFIC HONESTY & LIMITATIONS:
+All sessions are generated from reproducible synthetic archetypes (seed=42).
+This offline evaluation measures model ranking power and diversity guardrails under
+controlled simulated conditions; it does NOT constitute proof of real-world consumer uplift.
 """
 
-import math
-from collections import Counter
 from dataclasses import dataclass
+import math
+import numpy as np
+
 from backend.app.db.repository import CatalogRepository, ProductEntity
-from backend.app.engine.associations import generate_synthetic_transactions, AssociationRuleEngine
-from backend.app.engine.recommender import RecommenderEngine
+from backend.app.engine.associations import (
+    AssociationRuleEngine,
+    SyntheticSession,
+    generate_synthetic_sessions,
+    split_sessions,
+)
+from backend.app.engine.recommender import (
+    RecommenderEngine,
+    calculate_product_similarity,
+)
+from backend.app.engine.ml_ranker import get_ml_ranker
 
 @dataclass
 class EvaluationMetrics:
+    ranker_name: str
     hit_rate_at_k: float
     recall_at_k: float
     ndcg_at_k: float
     catalog_coverage_pct: float
-    avg_category_diversity: float
+    avg_pairwise_similarity: float
+    avg_category_diversity: float = 0.0
 
-def dcg_at_k(r: list[int], k: int) -> float:
+def compute_dcg(relevance: list[int], k: int) -> float:
     """Computes Discounted Cumulative Gain at rank K."""
     dcg = 0.0
-    for i in range(min(len(r), k)):
-        dcg += r[i] / math.log2(i + 2)
+    for i in range(min(len(relevance), k)):
+        gain = (2 ** relevance[i]) - 1
+        dcg += gain / math.log2(i + 2)
     return dcg
 
-def ndcg_at_k(r: list[int], k: int) -> float:
+def compute_ndcg(relevance: list[int], k: int) -> float:
     """Computes Normalized Discounted Cumulative Gain at rank K."""
-    actual_dcg = dcg_at_k(r, k)
-    ideal_dcg = dcg_at_k(sorted(r, reverse=True), k)
+    actual_dcg = compute_dcg(relevance, k)
+    ideal_dcg = compute_dcg(sorted(relevance, reverse=True), k)
     if ideal_dcg <= 0.0:
         return 0.0
     return actual_dcg / ideal_dcg
 
-def evaluate_baseline_recommender(
-    test_cases: list[tuple[list[ProductEntity], str]],
+def evaluate_test_sessions(
+    test_sessions: list[SyntheticSession],
     catalog: list[ProductEntity],
+    engine: RecommenderEngine,
+    ranker_name: str,
     k: int = 4,
+    use_baseline_logic: bool = False,
 ) -> EvaluationMetrics:
-    """Evaluates the simple 1-to-1 baseline recommender (using only the first cart item)."""
+    """Evaluates a ranking strategy across held-out test sessions (leave-one-out co-purchase test)."""
+    catalog_by_id = {p.id: p for p in catalog}
+
     hits = 0
     total_recall = 0.0
     total_ndcg = 0.0
     recommended_product_ids: set[str] = set()
-    category_diversity_sum = 0.0
-    num_eval = len(test_cases)
+    similarity_sums: list[float] = []
+    category_counts_list: list[int] = []
+    num_eval = 0
 
-    catalog_by_id = {p.id: p for p in catalog}
-
-    for input_entities, target_id in test_cases:
-        if not input_entities:
+    for sess in test_sessions:
+        basket_list = sorted(list(sess.basket))
+        if len(basket_list) < 2:
             continue
 
-        # Baseline logic: recommend based strictly on first product's complementary_ids
-        primary = input_entities[0]
-        recs = [catalog_by_id[cid] for cid in primary.complementary_ids if cid in catalog_by_id and cid != primary.id][:k]
-        rec_ids = [p.id for p in recs]
+        # Leave-one-out: hold out the last item in basket as target G_s
+        target_id = basket_list[-1]
+        input_ids = basket_list[:-1]
+
+        input_entities = [catalog_by_id[pid] for pid in input_ids if pid in catalog_by_id]
+        if not input_entities or target_id not in catalog_by_id:
+            continue
+
+        num_eval += 1
+        cart_tuples = [(p, 1) for p in input_entities]
+
+        if use_baseline_logic:
+            # Baseline: static complementary IDs of primary product
+            primary = input_entities[0]
+            recs = [
+                catalog_by_id[cid]
+                for cid in primary.complementary_ids
+                if cid in catalog_by_id and cid != primary.id and cid not in input_ids
+            ][:k]
+            rec_ids = [p.id for p in recs]
+        else:
+            recs_objs = engine.find_recommendations(
+                cart_items=cart_tuples,
+                catalog=catalog,
+                shopping_context=sess.shopping_context,
+                session_viewed_ids=sess.viewed_product_ids,
+                session_events=sess.events,
+                top_k=k,
+                use_mmr=True,
+            )
+            recs = [r.product for r in recs_objs]
+            rec_ids = [p.id for p in recs]
 
         for rid in rec_ids:
             recommended_product_ids.add(rid)
 
         # HitRate & Recall
-        relevance_vector = [1 if rid == target_id else 0 for rid in rec_ids]
         is_hit = 1 if target_id in rec_ids else 0
         hits += is_hit
-        total_recall += is_hit
-        total_ndcg += ndcg_at_k(relevance_vector, k)
+        total_recall += float(is_hit)  # With 1 held-out item, recall = is_hit / 1.0
 
-        # Diversity
-        cats = len({p.category for p in recs})
-        category_diversity_sum += cats
+        # NDCG
+        rel_vector = [1 if rid == target_id else 0 for rid in rec_ids]
+        total_ndcg += compute_ndcg(rel_vector, k)
 
-    accessory_count = sum(1 for p in catalog if p.category in {"Accessories", "Power & Cables", "Workspace"})
-    coverage = (len(recommended_product_ids) / max(1, accessory_count)) * 100.0
+        # Distinct categories in recommendations
+        category_counts_list.append(len({p.category for p in recs}))
 
-    return EvaluationMetrics(
-        hit_rate_at_k=round(hits / num_eval, 4),
-        recall_at_k=round(total_recall / num_eval, 4),
-        ndcg_at_k=round(total_ndcg / num_eval, 4),
-        catalog_coverage_pct=round(coverage, 2),
-        avg_category_diversity=round(category_diversity_sum / num_eval, 2),
-    )
+        # Pairwise Attribute Similarity among top-K recommendations
+        if len(recs) >= 2:
+            sims = []
+            for i in range(len(recs)):
+                for j in range(i + 1, len(recs)):
+                    sims.append(calculate_product_similarity(recs[i], recs[j]))
+            if sims:
+                similarity_sums.append(float(np.mean(sims)))
 
-def evaluate_improved_recommender(
-    test_cases: list[tuple[list[ProductEntity], str]],
-    catalog: list[ProductEntity],
-    engine: RecommenderEngine,
-    k: int = 4,
-) -> EvaluationMetrics:
-    """Evaluates the multi-signal whole-basket context-aware ranker."""
-    hits = 0
-    total_recall = 0.0
-    total_ndcg = 0.0
-    recommended_product_ids: set[str] = set()
-    category_diversity_sum = 0.0
-    num_eval = len(test_cases)
-
-    for input_entities, target_id in test_cases:
-        cart_items = [(p, 1) for p in input_entities]
-        recs = engine.find_recommendations(cart_items, catalog, shopping_context="productivity", top_k=k)
-        rec_ids = [r.product.id for r in recs]
-
-        for rid in rec_ids:
-            recommended_product_ids.add(rid)
-
-        relevance_vector = [1 if rid == target_id else 0 for rid in rec_ids]
-        is_hit = 1 if target_id in rec_ids else 0
-        hits += is_hit
-        total_recall += is_hit
-        total_ndcg += ndcg_at_k(relevance_vector, k)
-
-        cats = len({r.product.category for r in recs})
-        category_diversity_sum += cats
-
-    accessory_count = sum(1 for p in catalog if p.category in {"Accessories", "Power & Cables", "Workspace"})
-    coverage = (len(recommended_product_ids) / max(1, accessory_count)) * 100.0
+    eval_count = max(1, num_eval)
+    coverage = (len(recommended_product_ids) / float(len(catalog))) * 100.0
+    mean_sim = float(np.mean(similarity_sums)) if similarity_sums else 0.0
+    mean_cats = float(np.mean(category_counts_list)) if category_counts_list else 0.0
 
     return EvaluationMetrics(
-        hit_rate_at_k=round(hits / num_eval, 4),
-        recall_at_k=round(total_recall / num_eval, 4),
-        ndcg_at_k=round(total_ndcg / num_eval, 4),
+        ranker_name=ranker_name,
+        hit_rate_at_k=round(hits / eval_count, 4),
+        recall_at_k=round(total_recall / eval_count, 4),
+        ndcg_at_k=round(total_ndcg / eval_count, 4),
         catalog_coverage_pct=round(coverage, 2),
-        avg_category_diversity=round(category_diversity_sum / num_eval, 2),
+        avg_pairwise_similarity=round(mean_sim, 4),
+        avg_category_diversity=round(mean_cats, 2),
     )
 
-def run_offline_evaluation(k: int = 4) -> dict[str, EvaluationMetrics]:
-    """Generates holdout test cases and runs comparative evaluation."""
+def run_evaluation(k: int = 4) -> dict[str, EvaluationMetrics]:
+    """Runs rigorous multi-ranker evaluation on 400 held-out synthetic test sessions."""
     repo = CatalogRepository()
     catalog = repo.get_all_entities()
-    catalog_by_id = {p.id: p for p in catalog}
 
-    # Generate held-out test transactions with separate seed (seed=100)
-    raw_txns = generate_synthetic_transactions(num_transactions=250, seed=100)
-    test_cases: list[tuple[list[ProductEntity], str]] = []
+    # Generate 2000 sessions (seed=42) and perform session-grouped split
+    all_sessions = generate_synthetic_sessions(num_sessions=2000, seed=42)
+    train_sessions, test_sessions = split_sessions(all_sessions, train_ratio=0.8)
 
-    for txn in raw_txns:
-        if len(txn) >= 3:
-            # Mask the last item as the target co-purchase
-            target_id = txn[-1]
-            input_ids = txn[:-1]
-            input_entities = [catalog_by_id[pid] for pid in input_ids if pid in catalog_by_id]
-            if input_entities and target_id in catalog_by_id:
-                test_cases.append((input_entities, target_id))
+    # Mine association rules strictly from training sessions (1600 sessions)
+    assoc_engine = AssociationRuleEngine(sessions=train_sessions, min_support_pct=0.005, seed=42)
 
-    # Evaluate baseline
-    baseline_metrics = evaluate_baseline_recommender(test_cases, catalog, k=k)
+    # 1. Baseline Recommender (1-to-1)
+    dummy_engine = RecommenderEngine(association_engine=assoc_engine, ranking_mode="hybrid")
+    metrics_baseline = evaluate_test_sessions(
+        test_sessions=test_sessions,
+        catalog=catalog,
+        engine=dummy_engine,
+        ranker_name="Baseline (1-to-1)",
+        k=k,
+        use_baseline_logic=True,
+    )
 
-    # Evaluate improved multi-signal ranker
-    assoc_engine = AssociationRuleEngine(seed=42)
-    improved_engine = RecommenderEngine(association_engine=assoc_engine)
-    improved_metrics = evaluate_improved_recommender(test_cases, catalog, improved_engine, k=k)
+    # 2. Deterministic Hybrid Ranker S_hybrid with MMR
+    engine_hybrid = RecommenderEngine(association_engine=assoc_engine, ranking_mode="hybrid")
+    metrics_hybrid = evaluate_test_sessions(
+        test_sessions=test_sessions,
+        catalog=catalog,
+        engine=engine_hybrid,
+        ranker_name="Hybrid (S_hybrid + MMR)",
+        k=k,
+        use_baseline_logic=False,
+    )
 
-    return {
-        "baseline": baseline_metrics,
-        "improved": improved_metrics,
+    # 3. Supervised Machine Learning Ranker S_ML with MMR
+    # Ensure model is trained on training_sessions
+    get_ml_ranker(auto_train_if_missing=True)
+    engine_ml = RecommenderEngine(association_engine=assoc_engine, ranking_mode="ml")
+    metrics_ml = evaluate_test_sessions(
+        test_sessions=test_sessions,
+        catalog=catalog,
+        engine=engine_ml,
+        ranker_name="Learned ML (HistGBM + MMR)",
+        k=k,
+        use_baseline_logic=False,
+    )
+
+    results = {
+        "baseline": metrics_baseline,
+        "hybrid": metrics_hybrid,
+        "ml": metrics_ml,
+        "improved": metrics_hybrid,
     }
 
-if __name__ == "__main__":
-    print("=" * 70)
-    print("FAIRCART AI — OFFLINE RECOMMENDATION QUALITY EVALUATION")
-    print("Held-Out Synthetic Transactions (N=200+, K=4)")
-    print("=" * 70)
-
-    results = run_offline_evaluation(k=4)
-    base = results["baseline"]
-    impr = results["improved"]
-
-    print(f"{'METRIC':<25} | {'BASELINE (1-to-1)':<18} | {'IMPROVED (Whole-Basket)':<20} | {'DELTA':<10}")
-    print("-" * 75)
-    print(f"{'HitRate@4':<25} | {base.hit_rate_at_k:<18.4f} | {impr.hit_rate_at_k:<20.4f} | {impr.hit_rate_at_k - base.hit_rate_at_k:+.4f}")
-    print(f"{'Recall@4':<25} | {base.recall_at_k:<18.4f} | {impr.recall_at_k:<20.4f} | {impr.recall_at_k - base.recall_at_k:+.4f}")
-    print(f"{'NDCG@4':<25} | {base.ndcg_at_k:<18.4f} | {impr.ndcg_at_k:<20.4f} | {impr.ndcg_at_k - base.ndcg_at_k:+.4f}")
-    print(f"{'Catalog Coverage (%)':<25} | {base.catalog_coverage_pct:<18.1f}% | {impr.catalog_coverage_pct:<20.1f}% | {impr.catalog_coverage_pct - base.catalog_coverage_pct:+.1f}%")
-    print(f"{'Avg Category Diversity':<25} | {base.avg_category_diversity:<18.2f} | {impr.avg_category_diversity:<20.2f} | {impr.avg_category_diversity - base.avg_category_diversity:+.2f}")
-    print("=" * 75)
+    print("\n" + "=" * 80)
+    print("FAIRCART AI — OFFLINE RECOMMENDATION QUALITY EVALUATION (MILESTONE 4B)")
+    print(f"Held-Out Synthetic Test Sessions: N={len(test_sessions)} (from 2,000 total sessions, K=4)")
+    print("=" * 80)
+    print(f"{'METRIC':<28} | {'BASELINE (1-to-1)':<17} | {'HYBRID (S_hybrid)':<18} | {'LEARNED (HistGBM)':<18}")
+    print("-" * 88)
+    print(f"{'HitRate@4':<28} | {metrics_baseline.hit_rate_at_k:<17.4f} | {metrics_hybrid.hit_rate_at_k:<18.4f} | {metrics_ml.hit_rate_at_k:<18.4f}")
+    print(f"{'Recall@4':<28} | {metrics_baseline.recall_at_k:<17.4f} | {metrics_hybrid.recall_at_k:<18.4f} | {metrics_ml.recall_at_k:<18.4f}")
+    print(f"{'NDCG@4':<28} | {metrics_baseline.ndcg_at_k:<17.4f} | {metrics_hybrid.ndcg_at_k:<18.4f} | {metrics_ml.ndcg_at_k:<18.4f}")
+    print(f"{'Catalog Coverage (%)':<28} | {str(metrics_baseline.catalog_coverage_pct) + '%':<17} | {str(metrics_hybrid.catalog_coverage_pct) + '%':<18} | {str(metrics_ml.catalog_coverage_pct) + '%':<18}")
+    print(f"{'Pairwise Similarity (Lower=Diverse)':<28} | {metrics_baseline.avg_pairwise_similarity:<17.4f} | {metrics_hybrid.avg_pairwise_similarity:<18.4f} | {metrics_ml.avg_pairwise_similarity:<18.4f}")
+    print("=" * 88)
     print("NOTE: Evaluation is conducted on synthetic transaction data to validate pipeline mechanics.")
     print("It demonstrates multi-item synergy and diversity gains, not real consumer uplift.")
+    print("=" * 80 + "\n")
+
+    return results
+
+run_offline_evaluation = run_evaluation
+
+if __name__ == "__main__":
+    run_evaluation()
+

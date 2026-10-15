@@ -86,15 +86,19 @@ FairCart AI deliberately avoids server-side shopper sessions, tracking cookies, 
   - Zero personal identifiable information (PII) is stored.
   - No fingerprinting or cross-site tracking scripts are loaded.
 
-### 5.2 Server-Side Persistence (`SQLite`)
+### 5.2 Server-Side Persistence (`SQLite` & Model Artifacts)
 
 - **Database File:** Local `faircart.db` stored in the backend root directory.
 - **Write-Ahead Logging (WAL):** Enabled via `PRAGMA journal_mode = WAL` and `PRAGMA synchronous = NORMAL` for high concurrency without database lock contention.
-- **Schema Separation:**
-  1. `products`: Curated 24-item catalog, metadata, COGS, inventory, complementary connections, tags, use cases.
+- **Schema Separation (4 Tables):**
+  1. `products`: Curated 32-item catalog, metadata, COGS, inventory, complementary connections, tags, use cases.
   2. `merchant_settings`: Dynamic operational parameters (`min_margin_floor`, `max_discount_cap`, `dwell_threshold_seconds`, `ai_explanation_mode`).
+  3. `basket_association_rules`: 980 Apriori co-occurrence rules with antecedent subsets, support, raw confidence, Laplace-smoothed confidence ($\alpha=1.0$), and bounded logarithmic lift.
+  4. `session_events`: Privacy-preserving anonymous interaction telemetry (`product_view`, `add_to_cart`, `cart_remove`, `search_submitted`, `recommendation_accepted`) with zero PII and full lifecycle deletion (`DELETE /api/v1/events`).
+- **Machine Learning Model Artifact:**
+  - `backend/app/engine/artifacts/ranker_model.joblib` (195 kB): Pre-trained `HistGradientBoostingClassifier` trained on 14 candidate features across 1,600 synthetic shopping sessions. Loaded into memory at application startup (<15ms load time) with automatic deterministic fallback to $S_{hybrid}$.
 - **Disk Persistence on Cloud Providers:**
-  - On **Google Cloud Run / Render (free)**, disk storage is ephemeral across container restarts. To guarantee catalogue integrity, FairCart AI's application startup automatically runs `seed_catalog.py` if `faircart.db` is missing or contains fewer than 24 items.
+  - On **Google Cloud Run / Render (free)**, disk storage is ephemeral across container restarts. To guarantee catalogue integrity, FairCart AI's application startup automatically runs `seed_catalog.py` if `faircart.db` is missing or contains fewer than 32 items.
   - On **Render with Persistent Disk** or **Railway Volumes**, `faircart.db` can be mounted to a persistent volume path (e.g., `/data/faircart.db`), preserving custom merchant settings across redeployments.
 
 ### 5.3 Long-Term Enterprise Migration Path

@@ -159,11 +159,13 @@ class DecisionOrchestrator:
         # 3. Retrieve full catalog and run Engine A (Ranked Candidates)
         catalog = self.repository.get_all_entities()
         viewed_ids = self.repository.get_session_viewed_product_ids(request.session_id)
+        session_events = self.repository.get_session_events(request.session_id, limit=50)
         candidates = self.recommender.find_recommendations(
             cart_items=cart_entities,
             catalog=catalog,
             shopping_context=request.shopping_context,
             session_viewed_ids=viewed_ids,
+            session_events=session_events,
             top_k=4,
         )
 

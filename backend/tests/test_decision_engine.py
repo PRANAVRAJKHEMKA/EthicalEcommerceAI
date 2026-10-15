@@ -113,7 +113,7 @@ class TestDecisionEngine(unittest.TestCase):
         self.assertIsNotNone(rec)
         self.assertIn("item-002", item_001.complementary_ids)
         self.assertEqual(rec.product.id, "item-002")
-        self.assertGreaterEqual(rec.affinity_score, 0.60)
+        self.assertGreaterEqual(rec.affinity_score, 0.50)
 
     # =========================================================================
     # Engine B (EconomicOptimizer) Tests

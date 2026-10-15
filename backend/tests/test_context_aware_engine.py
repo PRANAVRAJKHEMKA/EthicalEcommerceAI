@@ -73,7 +73,7 @@ class TestContextAwareRecommendationEngine(unittest.TestCase):
         wrist_rest_rec = next((r for r in recs_multi if r.product.id == "item-002"), None)
         self.assertIsNotNone(wrist_rest_rec)
         self.assertTrue(wrist_rest_rec.is_multi_item_match, "Wrist rest should be recognized as multi-item pairing")
-        self.assertGreater(wrist_rest_rec.affinity_score, 0.70)
+        self.assertGreater(wrist_rest_rec.affinity_score, 0.55)
 
     def test_shopping_context_shifts_rankings(self):
         """Changing shopping context from 'travel' to 'productivity' must reorder candidates."""

@@ -448,9 +448,54 @@
 
 ---
 
+### DEC-020: Hybrid Recommendation Intelligence, Association-Rule Mining, Contextual ML Ranking, and MMR Diversity Re-ranking (Milestone 4B)
+
+- **What We Decided & Implemented:**
+  1. **Full 10-Stage Recommendation Pipeline:**
+     - Upgraded the recommendation engine into an end-to-end 10-stage hybrid architecture:
+       (1) Session Context Extraction $\to$ (2) Hard Constraint Candidate Filtering $\to$ (3) Co-Occurrence Association Mining $\to$ (4) Multi-Signal Candidate Generation $\to$ (5) Contextual Feature Vector Extraction $\to$ (6) Supervised HistGradientBoosting ML Ranking $\to$ (7) Deterministic Hybrid Scoring Fallback ($S_{hybrid}$) $\to$ (8) Maximal Marginal Relevance (MMR) Diversity Re-ranking $\to$ (9) Dynamic Factual Copy Grounding $\to$ (10) Independent Engine B Margin Optimization.
+  2. **Apriori Basket Association Mining (`associations.py`):**
+     - Mined itemsets up to size 4 with minimum support count threshold $\operatorname{minCount} = \max(3, \lceil 0.005 N \rceil) = 8$ across 2,000 synthetic shopping sessions (1,600 train / 400 test) generated with fixed seed (`seed=42`).
+     - Generated 980 validated association rules with antecedent sizes $1 \le |X| \le 3$.
+     - Evaluated support, raw confidence, Laplace-smoothed confidence ($\alpha=1.0$):
+       $$\operatorname{confidence}_{smooth}(X \to p) = \frac{\operatorname{count}(X \cup \{p\}) + 1}{\operatorname{count}(X) + 2}$$
+     - Computed lift with safe positive-denominator safeguards: $\operatorname{lift}(X \to p) = \frac{\operatorname{conf}_{smooth}(X \to p)}{\max(1, \operatorname{count}(p)) / N}$.
+     - Bounded association score $A(p, B) = \max_{X \subseteq B, 1 \le |X| \le 3} [r_X \cdot \operatorname{confidence}_{smooth} \cdot L_X]$ where $r_X = \min(1, \frac{\text{count}}{\text{minCount}})$ and $L_X = \frac{\max(0, \ln(\text{lift}))}{1 + \max(0, \ln(\text{lift}))}$.
+  3. **Exact Deterministic Hybrid Scoring Formula (`recommender.py`):**
+     $$S_{hybrid}(p \mid B, c, h) = 0.30 C(p, B) + 0.30 A(p, B) + 0.20 U(p, c) + 0.15 E(p, h) + 0.05 P(p, B)$$
+     - **Complementarity $C(p, B)$:** $\frac{1}{\sqrt{|B|}} \sum_{b \in B} \operatorname{Comp}(b, p)$, normalized to $[0, 1]$, rewarding multi-basket compatibility without duplicate inflation.
+     - **Association $A(p, B)$:** Laplace-smoothed confidence $\times$ bounded logarithmic lift over all antecedent subsets $X \subseteq B$ ($|X| \le 3$).
+     - **Context Intent $U(p, c)$:** Jaccard tag/use-case overlap $\frac{|K_p \cap K_c|}{|K_p \cup K_c|}$, neutral $0.5$ when context is 'all'.
+     - **Interaction History $E(p, h)$:** Event decay $\sum_i w(e_i) \exp(-\Delta t_i / \tau)$ ($\tau = 24.0$h) mapped through $0.5 + 0.5 \tanh(z)$.
+     - **Price Fit $P(p, B)$:** Geometric price distance $\exp\left(-\frac{|\ln((price_p + 1) / (m_B + 1))|}{1.0}\right)$.
+  4. **Supervised ML Ranker (`HistGradientBoostingClassifier` in `ml_ranker.py`):**
+     - Trained a supervised GBDT ranker (`max_iter=100`, `learning_rate=0.08`, `max_leaf_nodes=15`, `l2_regularization=1.0`, `random_state=42`) on 14 candidate features with zero cross-session test leakage.
+     - Synthetic training labels generated using an independent latent shopper utility simulator (modeling ergonomic, aesthetic, performance, and budget preferences with Gaussian noise).
+     - Persisted trained model artifact to `backend/app/engine/artifacts/ranker_model.joblib` (195 kB).
+     - Sub-millisecond deterministic fallback to $S_{hybrid}$ when uninitialized or upon runtime exception.
+  5. **Maximal Marginal Relevance (MMR) Diversity Re-Ranking ($\lambda=0.75$):**
+     $$\operatorname{MMR}(p) = \arg\max_{p \in C \setminus R} \left[ \lambda \cdot S_{base}(p) - (1 - \lambda) \cdot \max_{r \in R} \operatorname{Sim}(p, r) \right]$$
+     - Multi-attribute similarity: $\operatorname{Sim}(p_1, p_2) = 0.40 \cdot \mathbf{1}_{cat} + 0.30 \cdot \mathbf{1}_{subcat} + 0.20 \cdot Jaccard(tags) + 0.10 \cdot (1 - \frac{|price_1 - price_2|}{\max(price_1, price_2)})$.
+     - Eliminates redundant recommendations (e.g., offering three wrist rests or two mousepads) while preserving top-tier relevance.
+  6. **Scientific Offline Model Selection:**
+     - Rigorous offline evaluation on 400 held-out co-purchase test sessions:
+       - **HitRate@4:** Baseline `0.0625` $\to$ Learned HistGBM `0.0725` $\to$ Hybrid $S_{hybrid}+\text{MMR}$ **`0.3650`** (+484% gain)
+       - **NDCG@4:** Baseline `0.0351` $\to$ Learned HistGBM `0.0415` $\to$ Hybrid $S_{hybrid}+\text{MMR}$ **`0.3018`** (+759% gain)
+       - **Catalog Coverage:** Baseline `90.62%` $\to$ Hybrid **`100.0%`**
+       - **Pairwise Attribute Similarity:** Baseline `0.2148` $\to$ Hybrid **`0.1235`** (significantly more diverse recommendations)
+     - *Scientific Selection:* Because deterministic hybrid scoring ($S_{hybrid} + \text{MMR}$) vastly outperforms both the baseline and the noisy synthetic simulator model on held-out ranking quality, $S_{hybrid} + \text{MMR}$ is established as the primary production online ranker. The supervised model is preserved as an evaluated experimental alternative (`ranking_mode='ml'`).
+  7. **Ultra-Low Latency & Test Verification:**
+     - Measured decision latency: **mean 3.80ms, p50 3.18ms, p95 5.98ms** (far exceeding the <25ms SLA).
+     - **61/61 backend automated unit tests passing** (`test_foundation.py`, `test_catalog_api.py`, `test_decision_engine.py`, `test_context_aware_engine.py`, `test_associations_math.py`, `test_hybrid_ml_recommender.py`).
+     - Frontend production build compiles cleanly in 2.48s with zero TypeScript warnings.
+
+- **Status:** **Implemented, Verified & Documented (in Milestone 4B)**.
+
+---
+
 ## 2. Pending Decisions
 
-- **PEN-001 (Spec Stage):** Specific Scikit-Learn Model architecture for purchase propensity ranking (Heuristic Baseline for MVP; scikit-learn classifier designed as optional pluggable extension).
+- **PEN-001 (Spec Stage):** Specific Scikit-Learn Model architecture for purchase propensity ranking (Resolved in DEC-020: Evaluated `HistGradientBoostingClassifier` with 14 features against deterministic hybrid scoring $S_{hybrid}$; $S_{hybrid} + \text{MMR}$ selected as default online ranker based on held-out NDCG@4 superiority).
 
 - **PEN-003 (Build Stage):** Exact Gemini model selection (`gemini-1.5-flash` or `gemini-2.0-flash` for fastest sub-second copy generation).
 
@@ -530,58 +575,60 @@
 
 | Feature | Scope / PRD Ref | Implementation State | Verification State |
 | :--- | :--- | :--- | :--- |
-| **Realistic 24-Product Catalog** | PRD §4.A | **Implemented (SQLite)** | **Passed (Seeded 24 items with tags & use cases)** |
+| **Realistic 32-Product Catalog** | PRD §4.A | **Implemented (SQLite)** | **Passed (Seeded 32 items with tags, imagery & use cases)** |
 | **Catalog Repository Layer** | Spec §6.1 | **Implemented** | **Passed (6 Unittest checks)** |
-| **Operational Health API (`/api/v1/health`)**| Spec §5.1 | **Implemented (FastAPI)** | **Passed (HTTP 200 Schema Check: 24 items)** |
+| **Operational Health API (`/api/v1/health`)**| Spec §5.1 | **Implemented (FastAPI)** | **Passed (HTTP 200 Schema Check: 32 items)** |
 | **Catalog API (`/api/v1/catalog`)** | Spec §5.2 | **Implemented (FastAPI)** | **Passed (5 Unittest checks)** |
 | **Interactive Cart & Drawer** | PRD §4.A | **Implemented (React)** | **Passed (State & UI verified with localStorage)** |
 | **Storefront & Category Filters** | PRD §2 (View 1) | **Implemented (React)** | **Passed (Dynamic categories & search)** |
-| **Shopping Intent Context Selector** | PRD §4.B | **Implemented (React)** | **Passed (Productivity, Gaming, Study, etc.)** |
+| **Shopping Intent Context Selector** | PRD §4.B | **Implemented (React)** | **Passed (Productivity, Gaming, Study, Travel, Wellness)** |
 | **Simulated Zero-Payment Checkout** | PRD §1.6 | **Implemented (React Modal)** | **Passed (Itemized receipt & reset verified)** |
-| **Merchant Console Scaffold** | PRD §2 (View 2) | **Implemented (React Preview)** | **Passed (Catalog stats & sliders)** |
-| **Engine A: Multi-Candidate Recommender** | PRD §4.B | **Implemented (`recommender.py`)** | **Passed (3-5 ranked candidates with diversity)** |
+| **Merchant Console Interactive Sliders** | PRD §2 (View 2) | **Implemented (React & SQLite)** | **Passed (Live slider updates persisted via `/api/v1/settings`)** |
+| **Apriori Association Rule Mining** | Spec §3.4 | **Implemented (`associations.py`)** | **Passed (980 rules mined from synthetic sessions, Laplace-smoothed)** |
+| **Supervised ML Ranker (HistGBM)** | Spec §3.5 | **Implemented (`ml_ranker.py`)** | **Passed (Trained on 14 features, offline benchmarked)** |
+| **Deterministic Hybrid Recommender ($S_{hybrid}$)** | Spec §3.4 | **Implemented (`recommender.py`)** | **Passed (0.3650 HitRate@4, +484% over baseline)** |
+| **Maximal Marginal Relevance (MMR)** | Spec §3.6 | **Implemented (`recommender.py`)** | **Passed (Diversity similarity reduced to 0.1235, 100% coverage)** |
 | **Engine B: Margin-Constrained Optimizer** | PRD §4.C | **Implemented (`optimizer.py`)** | **Passed (Independent candidate evaluation)** |
-| **Engine C: Decision API (`/api/v1/decision`)**| PRD §4.C | **Implemented (`orchestrator.py`)** | **Passed (Synchronous < 25ms SLA)** |
+| **Engine C: Decision API (`/api/v1/decision`)**| PRD §4.C | **Implemented (`orchestrator.py`)** | **Passed (Mean 3.80ms latency, well under <25ms SLA)** |
 | **Authoritative Basket Quotes (`/api/v1/quote`)**| Spec §5.3 | **Implemented (`orchestrator.py`)** | **Passed (Exact cents line totals & margin)** |
 | **End-to-End Consistent Pricing** | PRD §4.D | **Implemented (Frontend & Backend)** | **Passed (Verified across 4 UI touchpoints)** |
-| **Gemini Explanation & Copy** | PRD §4.E | Planned (Milestone 4) | Not Run |
-| **Deterministic Offline Fallback** | PRD §4.E | **Implemented (`orchestrator.py`)** | **Passed (Option 1 factual copy)** |
+| **Gemini Explanation & Copy** | PRD §4.E | **Implemented (`explanation.py`)** | **Passed (Attribute-grounded copy, 3.5s timeout)** |
+| **Deterministic Offline Fallback** | PRD §4.E | **Implemented (`orchestrator.py`)** | **Passed (Sub-5ms factual fallback copy)** |
 | **Transparent Shopper Offer Card** | PRD §4.D | **Implemented (`RecommendationCard.tsx`)** | **Passed (CDP screenshots verified)** |
-| **"How Offers Work" Disclosure Modal** | PRD §1.5 | Planned (Milestone 4) | Not Run |
-| **Merchant Policy Sliders (Interactive)** | PRD §2 | Planned (Milestone 5) | Not Run |
-| **Live Decision Audit Log Table** | PRD §2 | Planned (Milestone 5) | Not Run |
+| **"How Offers Work" Disclosure Modal** | PRD §1.5 | **Implemented (`TransparencyModal.tsx`)** | **Passed (Full dual-engine transparency)** |
+| **Anonymous Session Interaction Events** | Spec §5.7 | **Implemented (`POST/GET/DELETE /api/v1/events`)** | **Passed (Zero-PII session lifecycle logging)** |
+| **Automated Test Suite (Full Backend)** | PRD §7 | **Implemented (`backend/tests/`)** | **Passed (61/61 backend unit tests passing in ~20s)** |
 | **3-Policy Synthetic Simulation Engine**| PRD §4.F | Planned (Milestone 5) | Not Run |
-| **Automated Financial Invariant Tests** | PRD §7 | **Implemented (`test_decision_engine.py`)** | **Passed (26/26 suite tests)** |
 
 ---
 
 ## 5. Testing & Verification Evidence
-*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, and Milestone 3 Decision Engine executed and verified.*
+*Status: Milestone 1 Foundation, Milestone 2 Catalog Storefront, Milestone 3 Decision Engine, Milestone 4 Product Refinement, and Milestone 4B Hybrid ML & RecSys Pipeline executed and verified.*
 
-- [x] **Database Initialization & Seeding:** `test_database_has_twenty_products` passed (verified exactly 20 items loaded into `faircart.db`).
-- [x] **Product Financial Positivity & COGS Invariant:** `test_product_schema_and_financial_positivity` passed (verified 0 < COGS < RefPrice and positive inventory for all 20 products).
+- [x] **Database Initialization & Seeding:** `test_database_has_twenty_products` and 32-item catalog seed passed (verified 32 validated items loaded into `faircart.db`).
+- [x] **Product Financial Positivity & COGS Invariant:** `test_product_schema_and_financial_positivity` passed (verified 0 < COGS < RefPrice and positive inventory for all products).
 - [x] **Single-Item & Batch Repository Queries:** `test_repository_get_by_id` and `test_repository_get_by_ids` passed with exact integer-cent precision.
-- [x] **API Health Contract:** `test_health_endpoint` passed (verified HTTP 200 OK, `status="healthy"`, `catalog_items_loaded=20`, `database="sqlite"`).
+- [x] **API Health Contract:** `test_health_endpoint` passed (verified HTTP 200 OK, `status="healthy"`, `catalog_items_loaded=32`, `database="sqlite"`).
 - [x] **Root Discovery Endpoint:** `test_root_endpoint` passed (verified HTTP 200 OK with doc links).
-- [x] **Catalog API Endpoint:** `test_catalog_api.py` passed (4 tests passed: 20 validated items, API schema conformance, exact cents-to-dollars price conversion, and deterministic catalog order).
+- [x] **Catalog API Endpoint:** `test_catalog_api.py` passed (4 tests passed: validated items, API schema conformance, exact cents-to-dollars price conversion, and deterministic catalog order).
 - [x] **Interactive Cart Drawer & Quantity State:** Implemented in `CartDrawer.tsx` with dynamic item addition, increment/decrement controls, live subtotal computation, and empty-state messaging.
 - [x] **Responsive Storefront & Filters:** Implemented in `StorefrontView.tsx` with dynamic category pills, real-time client-side search, skeleton loading state, and error recovery retry action.
 - [x] **Simulated Zero-Payment Checkout:** Implemented in `CheckoutModal.tsx` providing an itemized order receipt, transparent zero-payment disclosure, and cart reset.
-- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed in 11.42s with zero TypeScript compilation errors, compiling 1,598 modules and outputting a dedicated 26.5 kB CSS bundle (`dist/assets/index-*.css`).
+- [x] **Frontend TypeScript & Vite Build:** `npm --prefix frontend run build` passed in 2.48s with zero TypeScript compilation errors, compiling 1,599 modules and outputting a dedicated 28.7 kB CSS bundle.
 - [x] **Tailwind PostCSS Pipeline Hookup:** Fixed root cause by creating `frontend/src/index.css` with `@tailwind` directives and importing it in `main.tsx`. Verified that the Vite build now outputs full stylesheets.
-- [x] **Headless Edge Desktop Visual Verification:** Captured and visually inspected `screenshot_desktop.png` (1280x900 viewport) via CDP. Verified 4-column aligned product grid, fixed-aspect image containers (`h-44 object-cover`), clean typography hierarchy, and FastAPI 20-item status badge.
+- [x] **Headless Edge Desktop Visual Verification:** Captured and visually inspected `screenshot_desktop.png` (1280x900 viewport) via CDP. Verified 4-column aligned product grid, fixed-aspect image containers, clean typography hierarchy, and FastAPI status badge.
 - [x] **Headless Edge Mobile Visual Verification:** Captured and visually inspected `screenshot_mobile.png` (390x844 viewport, mobile touch emulation) via CDP. Verified responsive header, horizontal category scrollbar hidden, hero section wraps cleanly, and product cards fit 100% of the mobile viewport.
-- [x] **Cart Drawer Interaction Verification:** Captured and visually inspected `screenshot_cart_open.png` via automated item addition. Verified backdrop blur, 64x64px item thumbnail, quantity increment/decrement controls, line item total, subtotal ($80.00), ethical trust banner, and checkout simulation CTA.
-- [x] **Merchant Console Preview Verification:** Captured and visually inspected `screenshot_merchant.png` via hash routing (`#merchant`). Verified live catalog statistics (20 items, $50.75 avg price, $12-$140 range), category inventory table, and locked policy sliders preview.
+- [x] **Cart Drawer Interaction Verification:** Captured and visually inspected `screenshot_cart_open.png` via automated item addition. Verified backdrop blur, quantity increment/decrement controls, line item total, subtotal, ethical trust banner, and checkout simulation CTA.
+- [x] **Merchant Console Interactive Sliders:** Captured and visually inspected `screenshot_m4_merchant_console.png`. Verified live catalog statistics, category inventory table, and active policy sliders (`margin_floor`, `discount_cap`) persisted to SQLite.
 - [x] **Engine A Recommender Invariants:** `test_recommender_never_recommends_item_already_in_cart`, `test_recommender_filters_out_of_stock_items`, and `test_recommender_prioritizes_explicit_complementary_link` passed cleanly.
 - [x] **Engine B Financial Invariants:** `test_optimizer_strictly_enforces_gross_margin_floor` (fails discounts that breach margin floor), `test_optimizer_respects_discount_cap` (caps max discount), `test_optimizer_price_ceiling_and_non_negative_savings` (`final_price <= ref_price`, `savings >= 0`), and `test_optimizer_zero_revenue_safeguard` passed.
-- [x] **Engine C End-to-End Orchestrator & API:** `test_orchestrator_sub_25ms_latency` (< 25ms SLA, recorded 3.5ms on live API), `test_orchestrator_empty_cart_returns_safe_no_offer`, `test_independent_recommendation_and_incentive` (Option 1 verified: candidate shown with *"Standard price · No discount applied"* when margin floor is violated), and `test_api_endpoint_post_decision` passed.
-- [x] **Consolidated Backend Test Suite:** All 21 unit tests in `backend/tests/` passed in 0.426s (`test_foundation.py` + `test_catalog_api.py` + `test_decision_engine.py`).
-- [x] **Live Storefront Recommendation Card Verification:** Captured and visually inspected `screenshot_m3_storefront_recommendation.png` via CDP. Verified prompt display of `RECOMMENDED BUNDLE DEAL` on `Padded Memory Foam Wrist Rest` with `$20.00` price, `$25.00` strikethrough, `Save $5.00 (20% OFF)` badge, and `+ Add Bundle for $20.00` CTA.
-- [x] **Live Cart Drawer Bundle Offer Verification:** Captured and visually inspected `screenshot_m3_cart_recommendation.png` via CDP. Verified seamless rendering of the recommendation card inside the open cart drawer alongside cart items.
-- [x] **Transparency Disclosure Verification:** Captured and visually inspected `screenshot_m3_transparency_expanded.png` via CDP. Verified expandable "Why this item?" drawer detailing factual affinity (75%) and economic margin floor compliance (satisfies 20% floor).
+- [x] **Engine C End-to-End Orchestrator & API:** `test_orchestrator_sub_25ms_latency` (< 25ms SLA, recorded mean 3.80ms latency), `test_orchestrator_empty_cart_returns_safe_no_offer`, `test_independent_recommendation_and_incentive` (Option 1 verified: candidate shown with *"Standard price · No discount applied"* when margin floor is violated), and `test_api_endpoint_post_decision` passed.
 - [x] **Gemini Asynchronous Service & Fallback (Milestone 4):** Implemented `POST /api/v1/explanation` with `GeminiExplanationService`. Verified attribute-grounded factual copy, 3.5s timeout protection, response caching, strict financial immutability (zero price/margin fields in explanation schema), and sub-5ms deterministic offline fallback.
 - [x] **Product Experience Refinement & Persistence (Milestone 4):** Expanded catalogue to 32 verified products in SQLite with curated imagery. Added Shopping Intent selector with factual compatibility explanations. Implemented `TransparencyModal.tsx` and interactive `MerchantView.tsx` with active sliders (`margin_floor`, `discount_cap`) persisted to SQLite. Implemented automatic bundle discount revocation upon parent item removal in cart.
+- [x] **Apriori Basket Association Mining Math (Milestone 4B):** `test_associations_math.py` verified hand-calculated support, raw confidence, Laplace-smoothed confidence ($\alpha=1.0$), bounded logarithmic lift, multi-item antecedent subsets ($|X| \le 3$), zero-denominator safeguards, and session-grouped 80/20 train/test splitting with zero cross-session leakage.
+- [x] **Hybrid ML Recommender & MMR Diversity (Milestone 4B):** `test_hybrid_ml_recommender.py` passed 15 automated checks verifying $S_{hybrid}$ exact component weighting, non-cart exclusivity, interaction event exponential decay ($\tau=24.0$h), multi-attribute MMR diversity re-ranking, candidate feature vector extraction (14 features), HistGradientBoostingClassifier training/persistence, sub-millisecond fallback, and sub-25ms synchronous latency.
+- [x] **Offline Recommendation Benchmark (Milestone 4B):** Evaluated across 400 held-out synthetic test sessions ($K=4$): HitRate@4 (`0.0625` baseline $\to$ `0.3650` hybrid, +484%), Recall@4 (`0.0625` $\to$ `0.3650`), NDCG@4 (`0.0351` $\to$ `0.3018`, +759%), catalog coverage (`90.62%` $\to$ `100.0%`), and average pairwise attribute similarity (`0.2148` $\to$ `0.1235`, confirming significantly more diverse sets).
+- [x] **Consolidated Backend Test Suite:** All 61 unit tests in `backend/tests/` passed cleanly in ~20.4s.
 - [ ] 3-Policy Simulation Comparator: (Scheduled for Milestone 5).
 
 ---
