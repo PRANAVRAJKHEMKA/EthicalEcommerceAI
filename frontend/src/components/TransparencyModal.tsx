@@ -89,7 +89,7 @@ export function TransparencyModal({
                 1. Recommendation Selection (Engine A)
               </h4>
               <p>
-                When you add products to your cart, Engine A evaluates candidate accessories from our SQLite catalogue. Recommendations are chosen purely based on factual technical compatibility, shared physical attributes, complementary relationships, and your explicitly chosen Shopping Intent filter (e.g. Productivity, Gaming, Study). If no eligible in-stock match exists, no recommendation is shown.
+                When you add products to your cart, Engine A evaluates candidate accessories from our product catalogue. Recommendations are chosen purely based on factual technical compatibility, shared physical attributes, complementary relationships, and your explicitly chosen Shopping Intent filter (e.g. Productivity, Gaming, Study). If no eligible in-stock match exists, no recommendation is shown.
               </p>
             </div>
 

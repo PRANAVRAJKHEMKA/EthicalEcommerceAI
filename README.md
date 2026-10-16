@@ -9,7 +9,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-164%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-168%20Passing-brightgreen.svg)]()
 
 ---
 
@@ -114,7 +114,7 @@ npm run dev
 
 ### 3. Run Automated Tests
 ```bash
-# Execute the full backend test suite (164 tests passing at Step 4B release checkpoint)
+# Execute the full backend test suite (168 tests passing at Step 5.16 release checkpoint)
 python -m unittest discover -s backend/tests -p "test_*.py"
 
 # Verify frontend production build

@@ -216,10 +216,18 @@ export function CartDrawer({
                             )}
                           </div>
 
-                          {/* Applied bundle condition note */}
-                          {hasDiscount && item.appliedCondition && (
+                          {/* Applied bundle condition note or revocation warning */}
+                          {hasDiscount && (item.appliedCondition || quoteItem?.applied_condition) && (
                             <p className="text-[10px] text-indigo-700 font-medium truncate mt-0.5">
-                              {item.appliedCondition}
+                              {item.appliedCondition || quoteItem?.applied_condition}
+                            </p>
+                          )}
+                          {!hasDiscount && (
+                            (item.appliedCondition && item.appliedCondition.includes('·')) ||
+                            (quoteItem?.applied_condition && quoteItem.applied_condition.includes('·') && !quoteItem.applied_condition.includes('No discount applied'))
+                          ) && (
+                            <p className="text-[10px] text-amber-700 font-medium truncate mt-0.5 flex items-center gap-1">
+                              <span>⚠️ {quoteItem?.applied_condition || item.appliedCondition}</span>
                             </p>
                           )}
 

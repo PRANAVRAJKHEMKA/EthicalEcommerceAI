@@ -42,34 +42,124 @@ class DecisionOrchestrator:
         self,
         cart_entities: list[tuple[ProductEntity, int]],
         applied_discounts: dict[str, float] | None = None,
+        margin_floor: float | None = None,
+        discount_cap: float | None = None,
     ) -> BasketQuote:
-        """Computes authoritative integer-cent monetary totals for the active cart."""
-        discounts = applied_discounts or {}
-        quote_items: list[BasketQuoteItem] = []
+        """Computes authoritative integer-cent monetary totals and validates promotional discounts for the active cart.
+
+        Enforces mathematical guardrails:
+        1. Discount Cap: Individual item discounts cannot exceed discount_cap (default 0.20).
+        2. Bundle Requirement: Bundle discounts require multiple items (total quantity >= 2 and >= 2 unique items).
+        3. Gross Margin Floor: If applying requested discounts breaches margin_floor, discounts are revoked
+           in order to strictly guarantee that basket gross margin >= margin_floor.
+        """
+        raw_discounts = applied_discounts or {}
+        if not cart_entities:
+            return BasketQuote(
+                items=[],
+                standard_subtotal=0.0,
+                final_subtotal=0.0,
+                total_savings=0.0,
+                basket_gross_margin=0.0,
+            )
+
         standard_subtotal_cents = 0
-        final_subtotal_cents = 0
         total_cogs_cents = 0
+        total_qty = 0
+
+        for entity, qty in cart_entities:
+            standard_subtotal_cents += entity.reference_price_cents * qty
+            total_cogs_cents += entity.cogs_cents * qty
+            total_qty += qty
+
+        baseline_margin = (
+            ((standard_subtotal_cents - total_cogs_cents) / standard_subtotal_cents)
+            if standard_subtotal_cents > 0
+            else 0.0
+        )
+
+        effective_cap = discount_cap if discount_cap is not None else 0.20
+        effective_discounts: dict[str, float] = {}
+        revocation_reasons: dict[str, str] = {}
+
+        # 1. Initial clamp of requested discounts to discount_cap and [0.0, 1.0]
+        for entity, qty in cart_entities:
+            raw_pct = raw_discounts.get(entity.id, 0.0)
+            if isinstance(raw_pct, (int, float)) and raw_pct > 0.0:
+                effective_discounts[entity.id] = max(0.0, min(effective_cap, float(raw_pct)))
+            else:
+                effective_discounts[entity.id] = 0.0
+
+        # 2. Bundle eligibility rule: bundle discounts require >= 2 items in cart
+        if total_qty < 2 or len(cart_entities) < 2:
+            for entity, qty in cart_entities:
+                if effective_discounts.get(entity.id, 0.0) > 0.0:
+                    effective_discounts[entity.id] = 0.0
+                    revocation_reasons[entity.id] = "Standard price · Bundle discount requires multiple items"
+
+        # 3. Margin floor validation (if margin_floor is configured)
+        if margin_floor is not None:
+            # If the undiscounted catalogue baseline itself is below the floor, no promotional discounts are permissible
+            if baseline_margin < margin_floor - 1e-6:
+                for entity, qty in cart_entities:
+                    if effective_discounts.get(entity.id, 0.0) > 0.0:
+                        effective_discounts[entity.id] = 0.0
+                        revocation_reasons[entity.id] = (
+                            f"Standard price · Baseline margin ({baseline_margin*100.0:.1f}%) is below {margin_floor*100.0:.1f}% floor"
+                        )
+            else:
+                # Helper to compute net revenue and gross margin for current effective discounts
+                def calc_margin(discs: dict[str, float]) -> tuple[int, float]:
+                    rev = 0
+                    for e, q in cart_entities:
+                        d = discs.get(e.id, 0.0)
+                        d_cents = round(e.reference_price_cents * d)
+                        rev += (e.reference_price_cents - d_cents) * q
+                    gm = ((rev - total_cogs_cents) / rev) if rev > 0 else 0.0
+                    return rev, gm
+
+                _, current_margin = calc_margin(effective_discounts)
+
+                # If applying requested discounts breaches the floor, revoke discounts causing the breach
+                if current_margin < margin_floor - 1e-6:
+                    discounted_entities = [
+                        (e, q) for e, q in cart_entities if effective_discounts.get(e.id, 0.0) > 0.0
+                    ]
+                    # Sort by dollar discount descending
+                    discounted_entities.sort(
+                        key=lambda eq: round(eq[0].reference_price_cents * effective_discounts[eq[0].id]) * eq[1],
+                        reverse=True
+                    )
+
+                    for e, q in discounted_entities:
+                        if current_margin >= margin_floor - 1e-6:
+                            break
+                        effective_discounts[e.id] = 0.0
+                        revocation_reasons[e.id] = (
+                            f"Standard price · Discount revoked to satisfy {margin_floor*100.0:.1f}% margin floor"
+                        )
+                        _, current_margin = calc_margin(effective_discounts)
+
+        # 4. Construct authoritative quote items and calculate final integer-cent totals
+        quote_items: list[BasketQuoteItem] = []
+        final_subtotal_cents = 0
 
         for entity, qty in cart_entities:
             ref_cents = entity.reference_price_cents
-            raw_pct = discounts.get(entity.id, 0.0)
-            discount_pct = max(0.0, min(0.50, float(raw_pct))) if isinstance(raw_pct, (int, float)) else 0.0
+            discount_pct = effective_discounts.get(entity.id, 0.0)
             discount_cents = round(ref_cents * discount_pct)
             unit_cents = ref_cents - discount_cents
 
             line_total_cents = unit_cents * qty
-            line_standard_cents = ref_cents * qty
             savings_cents = discount_cents * qty
-
-            standard_subtotal_cents += line_standard_cents
             final_subtotal_cents += line_total_cents
-            total_cogs_cents += (entity.cogs_cents * qty)
 
-            condition_str = (
-                f"Bundle discount ({int(discount_pct * 100)}% off)"
-                if discount_pct > 0
-                else "Standard price · No discount applied"
-            )
+            if discount_pct > 0.0:
+                condition_str = f"Bundle discount ({int(round(discount_pct * 100.0))}% off)"
+            elif entity.id in revocation_reasons:
+                condition_str = revocation_reasons[entity.id]
+            else:
+                condition_str = "Standard price · No discount applied"
 
             quote_items.append(BasketQuoteItem(
                 product_id=entity.id,
@@ -84,7 +174,7 @@ class DecisionOrchestrator:
             ))
 
         total_savings_cents = standard_subtotal_cents - final_subtotal_cents
-        gross_margin = (
+        final_margin = (
             ((final_subtotal_cents - total_cogs_cents) / final_subtotal_cents)
             if final_subtotal_cents > 0
             else 0.0
@@ -95,7 +185,7 @@ class DecisionOrchestrator:
             standard_subtotal=round(standard_subtotal_cents / 100.0, 2),
             final_subtotal=round(final_subtotal_cents / 100.0, 2),
             total_savings=round(total_savings_cents / 100.0, 2),
-            basket_gross_margin=round(gross_margin, 4),
+            basket_gross_margin=round(final_margin, 4),
         )
 
     def process_decision(self, request: DecisionRequest) -> DecisionResponse:
@@ -125,7 +215,12 @@ class DecisionOrchestrator:
 
         # 2. Compute authoritative baseline quote for the cart (if items present)
         cart_quote = (
-            self.calculate_basket_quote(cart_entities, applied_discounts=request.applied_discounts)
+            self.calculate_basket_quote(
+                cart_entities,
+                applied_discounts=request.applied_discounts,
+                margin_floor=request.margin_floor,
+                discount_cap=request.discount_cap,
+            )
             if cart_entities
             else None
         )
@@ -298,12 +393,18 @@ class DecisionOrchestrator:
         eligible_offers: dict[str, RecommendationItem] = {}
         has_any_offer = False
 
+        approved_discounts = {
+            item.product_id: item.discount_percentage
+            for item in cart_quote.items
+            if item.discount_percentage > 0.0
+        } if cart_quote else {}
+
         for cand in candidates:
             if cart_entities:
                 opt_result = self.optimizer.optimize(
                     cart_items=cart_entities,
                     candidate=cand.product,
-                    applied_discounts=request.applied_discounts,
+                    applied_discounts=approved_discounts,
                     affinity_score=cand.affinity_score,
                     dwell_time_seconds=request.dwell_time_seconds,
                     margin_floor=request.margin_floor,

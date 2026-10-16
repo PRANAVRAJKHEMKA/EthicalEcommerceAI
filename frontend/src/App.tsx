@@ -23,7 +23,7 @@ import {
   saveSessionPolicy,
 } from './api.ts';
 import { Header } from './components/Header.tsx';
-import { CartDrawer } from './components/CartDrawer.tsx';
+import { CartDrawer, isQuoteAlignedWithCart } from './components/CartDrawer.tsx';
 import { CheckoutModal } from './components/CheckoutModal.tsx';
 import { TransparencyModal } from './components/TransparencyModal.tsx';
 import { LoginModal } from './components/LoginModal.tsx';
@@ -444,38 +444,53 @@ export default function App() {
     sessionPolicy.discount_cap,
   ]);
 
-  // Revalidate cart bundle discounts against latest backend decision
-  // Automatically revokes discounts if prerequisite items are removed
+  // Revalidate cart bundle discounts against authoritative backend basket quote
+  // Reconciles line prices with the backend-approved quote and updates/revokes discounts
   useEffect(() => {
-    if (!decision) return;
+    if (!decision?.cart_quote) return;
+    if (!isQuoteAlignedWithCart(decision.cart_quote, cart)) return;
+
     setCart((prev) => {
+      if (!isQuoteAlignedWithCart(decision.cart_quote, prev)) return prev;
+
       let changed = false;
+      const quoteItemsById = new Map(decision.cart_quote!.items.map((qi) => [qi.product_id, qi]));
+
       const next = prev.map((item) => {
-        if (item.appliedDiscountPct && item.appliedDiscountPct > 0) {
-          const offer = decision.eligible_offers_by_product_id?.[item.product.id];
-          if (!offer || !offer.is_offered) {
+        const quoteItem = quoteItemsById.get(item.product.id);
+        if (!quoteItem) return item;
+
+        if (quoteItem.discount_percentage > 0) {
+          if (
+            item.discountedPrice !== quoteItem.unit_price ||
+            item.appliedDiscountPct !== quoteItem.discount_percentage ||
+            item.appliedCondition !== quoteItem.applied_condition
+          ) {
+            changed = true;
+            return {
+              ...item,
+              discountedPrice: quoteItem.unit_price,
+              appliedDiscountPct: quoteItem.discount_percentage,
+              appliedCondition: quoteItem.applied_condition,
+            };
+          }
+        } else {
+          if (item.discountedPrice !== undefined || item.appliedDiscountPct !== undefined) {
             changed = true;
             return {
               ...item,
               discountedPrice: undefined,
               appliedDiscountPct: undefined,
-              appliedCondition: undefined,
-            };
-          } else if (item.discountedPrice !== offer.final_price) {
-            changed = true;
-            return {
-              ...item,
-              discountedPrice: offer.final_price,
-              appliedDiscountPct: offer.discount_percentage,
-              appliedCondition: offer.conditions,
+              appliedCondition: quoteItem.applied_condition,
             };
           }
         }
         return item;
       });
+
       return changed ? next : prev;
     });
-  }, [decision]);
+  }, [decision, cart]);
 
   // Fetch AI / natural-language explanations when recommendations change
   useEffect(() => {
@@ -715,6 +730,7 @@ export default function App() {
               onHoverProduct={handleProductHover}
               onFocusProduct={handleProductFocus}
               isUpdating={isDecisionLoading}
+              health={health}
             />
           ) : (
             <MerchantView

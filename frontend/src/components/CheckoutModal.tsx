@@ -142,9 +142,17 @@ export function CheckoutModal({
                               </span>
                             )}
                           </div>
-                          {isDiscounted && item.appliedCondition && (
+                          {isDiscounted && (item.appliedCondition || quoteItem?.applied_condition) && (
                             <p className="text-[10px] text-indigo-700 font-medium truncate mt-0.5">
-                              {item.appliedCondition}
+                              {item.appliedCondition || quoteItem?.applied_condition}
+                            </p>
+                          )}
+                          {!isDiscounted && (
+                            (item.appliedCondition && item.appliedCondition.includes('·')) ||
+                            (quoteItem?.applied_condition && quoteItem.applied_condition.includes('·') && !quoteItem.applied_condition.includes('No discount applied'))
+                          ) && (
+                            <p className="text-[10px] text-amber-700 font-medium truncate mt-0.5">
+                              ⚠️ {quoteItem?.applied_condition || item.appliedCondition}
                             </p>
                           )}
                         </div>

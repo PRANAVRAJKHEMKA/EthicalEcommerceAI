@@ -144,12 +144,12 @@ Because free cloud container tiers spin down after 15 minutes of inactivity:
 
 | Validation Check | Tool / Mechanism | Result | Evidence Timestamp |
 | :--- | :--- | :--- | :--- |
-| Backend Automated Tests | Python `unittest` | **164 / 164 tests passing** (0 failures, 0 errors in 40.8s) | 2026-10-16 |
-| Frontend Production Build | Vite 6.4.4 + TypeScript 5.7 | **Built cleanly in 3.82s** (0 type errors, gzip: 102.16 kB JS, 6.78 kB CSS) | 2026-10-16 |
+| Backend Automated Tests | Python `unittest` | **168 / 168 tests passing** (0 failures, 0 errors in 101.8s) | 2026-10-16 |
+| Frontend Production Build | Vite 6.4.4 + TypeScript 5.7 | **Built cleanly in 10.1s** (0 type errors, gzip: 101.95 kB JS, 6.68 kB CSS) | 2026-10-16 |
 | Database Durability & Dialect | `test_database_persistence.py` | 11 tests: ANSI SQL translation, row indexing, restart persistence, masked connection string in logs | 2026-10-15 |
 | Strict Production DB Failure | `test_database_persistence.py` | Unreachable PostgreSQL in production halts startup with `RuntimeError`; zero silent ephemeral fallback | 2026-10-15 |
 | Connection Pooling & TLS Latency | `database.py` (`PostgresConnectionPool`) | Eliminates TLS handshake overhead; warmed query reuse in 250–480ms vs 1,850ms initial connect | 2026-10-16 |
-| Session-Scoped Policy Overrides | `test_session_policy_overrides.py` | 4 tests: isolated per-browser policy evaluation without mutating shared database state | 2026-10-16 |
+| Session-Scoped Policy Overrides | `test_session_policy_overrides.py` | 8 tests: isolated per-browser policy evaluation, bundle discount offer-to-cart consistency, margin floor breach revocation | 2026-10-16 |
 | Cart Quote & Margin Alignment | Frontend & `test_decision_engine.py` | Strict basket-to-quote verification, net revenue margin calculation, clear base vs bundle margins | 2026-10-16 |
 | Dynamic Operational Health | `test_foundation.py` | `GET /api/v1/health` reports `database="postgresql"` when configured; returns 503 on DB disconnect | 2026-10-15 |
 | Demo Authentication Security | `test_demo_auth.py` | 12 tests: 5 demo personas, Argon2id verification, 401 on bad password, 429 on rate limit, 403 on admin escalation | 2026-10-15 |

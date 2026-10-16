@@ -152,6 +152,9 @@ class QuoteRequest(BaseModel):
     """Request payload for authoritative basket quote calculation."""
     cart_items: list[CartItemInput] = Field(default_factory=list)
     applied_discounts: dict[str, float] = Field(default_factory=dict, description="Map of product_id to applied discount fraction")
+    margin_floor: float | None = Field(default=None, ge=0.0, le=1.0, description="Optional margin floor threshold for discount validation")
+    discount_cap: float | None = Field(default=None, ge=0.0, le=0.50, description="Optional maximum discount cap for discount validation")
+
 
 class MerchantSettingsRequest(BaseModel):
     """Request payload for updating merchant policy guardrails."""

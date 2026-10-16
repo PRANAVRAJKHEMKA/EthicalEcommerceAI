@@ -1166,3 +1166,37 @@ OK (131/131 tests passing, 0 failures, 0 errors)
 ### 11.5 Complete Test Suite Expansion (164 Tests Passing)
 - **Hermetic Test Isolation:** Added `test_00_test_isolation.py` and hardened `backend/tests/__init__.py` to enforce that tests run strictly against local SQLite memory/temporary fixtures, guaranteeing zero accidental writes, tables drops, or test state contamination against live Neon databases.
 - **Verification Results:** Full automated test suite passes 164 tests in 40.841s (0 failures, 0 errors, exit code 0).
+
+---
+
+## 12. Milestone 6F / Step 5.16: Offer-to-Cart Bundle Pricing Consistency, Dynamic Database Status & Release Publication
+
+> **Release Checkpoint:** Milestone 6F / Step 5.16 Final Release Candidate<br>
+> **Verification Date & Time:** October 16, 2026, 23:45 IST<br>
+> **Automated Backend Tests:** **168 / 168 tests passing** (0 failures, 0 errors in 101.8s)<br>
+> **Frontend Production Build:** Built cleanly in 10.1s (0 type errors, 101.95 kB gzip JS, 6.68 kB gzip CSS)<br>
+> **Database Architecture:** Dynamic runtime status indicators (Neon PostgreSQL Cloud vs. Local SQLite vs. Reconnecting) without credential disclosure.
+
+### 12.1 Recommendation Offer-to-Cart Price Consistency
+- **The Problem:** In live testing, when a customer added a recommended bundle item (e.g. Aluminum Monitor Riser Stand offered at $49.50 with 10% bundle discount when paired with the Precision Vertical Mouse), the item was added to the cart, but reverted to its full reference catalogue price ($55.00).
+- **Root Cause:**
+  1. The cart quote evaluation in `calculate_basket_quote` did not validate bundle prerequisite constraints or economic margin floors against session-scoped policy overrides, leading to inconsistencies between the recommendation card offer and the server-side quote.
+  2. The frontend relied on a local lookup against ephemeral `eligible_offers_by_product_id` which was cleared or misaligned when the decision payload updated.
+- **The Solution:**
+  1. **Server-Side Quote Validation:** `calculate_basket_quote` now explicitly validates both bundle prerequisite criteria ($\ge 2$ items in basket) and mathematical gross margin floor against active session policies.
+  2. **Safe Revocation:** If a prerequisite item is removed or an applied discount would breach the active gross margin floor, the discount is revoked and an explicit human-readable reason is attached (`applied_condition`).
+  3. **Quote-Authoritative Cart Pricing:** `App.tsx` revalidates in-cart items directly against `decision.cart_quote.items`, ensuring discounts are displayed only when approved by the server quote.
+  4. **Automated Regression Suite:** Added 4 new automated unit tests in `test_session_policy_overrides.py` (bringing total tests to 168):
+     - `test_reproduce_mouse_and_stand_bundle_offer_to_cart_consistency`: Mouse ($65) + Stand ($55 with 10% off -> $49.50) satisfies 50% floor (50.22%), quote approves $49.50, subtotal $114.50, savings $5.50.
+     - `test_discounts_revoked_safely_when_margin_floor_breached`: At 52% floor, Stand discount is revoked to $55.00 with clear explanation.
+     - `test_bundle_discount_revoked_when_prerequisite_items_removed`: Standalone item has discount revoked.
+     - `test_global_merchant_settings_remain_unchanged_after_session_tests`: Confirms database settings remain unchanged at 20% floor / 20% cap.
+
+### 12.2 Dynamic Database Status Indicators & Honest UI
+- **The Problem:** The storefront UI previously displayed static text "32 Local SQLite Items" even when connected to live Neon PostgreSQL, creating ambiguity for evaluators.
+- **The Solution:**
+  1. Connected storefront and merchant views dynamically to `/api/v1/health` response (`health.database`).
+  2. Renders `PostgreSQL Cloud Persistence Active` / `32 PostgreSQL Cloud Items` when running on Neon PostgreSQL.
+  3. Renders `SQLite WAL Persistence Active` / `32 Local SQLite Items` when running on local development SQLite.
+  4. Renders `Database Reconnecting / Offline` with red alert status if health check fails or database disconnects.
+  5. Masks all hostnames and credentials, ensuring complete operational privacy.

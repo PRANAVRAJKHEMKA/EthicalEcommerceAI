@@ -250,10 +250,12 @@ export function MerchantView({ products, health, sessionPolicy, onPolicyChange }
 
         <div className="pt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
           <span className="inline-flex items-center space-x-1.5 font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className={`w-1.5 h-1.5 rounded-full ${health?.status === 'unhealthy' ? 'bg-red-500' : 'bg-emerald-500'}`} />
             <span>
-              {health?.database === 'postgresql'
-                ? 'Neon PostgreSQL Active'
+              {health?.status === 'unhealthy'
+                ? 'Database Offline'
+                : health?.database === 'postgresql'
+                ? 'PostgreSQL Cloud Persistence Active'
                 : 'SQLite WAL Persistence Active'}
             </span>
           </span>
@@ -290,7 +292,9 @@ export function MerchantView({ products, health, sessionPolicy, onPolicyChange }
           </div>
           <div className="text-2xl font-bold text-slate-900 font-mono">{totalProducts} Products</div>
           <p className="text-[11px] text-slate-500">
-            {health?.database === 'postgresql'
+            {health?.status === 'unhealthy'
+              ? 'Database reconnecting'
+              : health?.database === 'postgresql'
               ? 'Curated & seeded in Neon PostgreSQL'
               : 'Curated & seeded in SQLite database'}
           </p>

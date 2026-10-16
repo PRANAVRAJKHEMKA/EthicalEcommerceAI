@@ -541,7 +541,12 @@ def calculate_quote(request: QuoteRequest) -> BasketQuote:
                 cart_entities.append((entity, item.quantity))
 
         orchestrator = DecisionOrchestrator(repository=repo)
-        return orchestrator.calculate_basket_quote(cart_entities, request.applied_discounts)
+        return orchestrator.calculate_basket_quote(
+            cart_entities,
+            request.applied_discounts,
+            margin_floor=request.margin_floor,
+            discount_cap=request.discount_cap,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Basket quote calculation failed: {str(e)}")
 

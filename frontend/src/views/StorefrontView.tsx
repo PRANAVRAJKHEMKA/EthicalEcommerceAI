@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Search, AlertCircle, RefreshCw, Layers, ShieldCheck, Cpu, Compass, Sparkles, HelpCircle } from 'lucide-react';
-import { Product, RecommendationItem, ItemExplanation } from '../types.ts';
+import { Product, RecommendationItem, ItemExplanation, HealthStatus } from '../types.ts';
 import { ProductCard } from '../components/ProductCard.tsx';
 import { RecommendationCard } from '../components/RecommendationCard.tsx';
 import { ProductDetailModal } from '../components/ProductDetailModal.tsx';
@@ -9,6 +9,7 @@ interface StorefrontViewProps {
   products: Product[];
   loading: boolean;
   error: string | null;
+  health?: HealthStatus | null;
   onRetry: () => void;
   onAddToCart: (
     product: Product,
@@ -59,6 +60,7 @@ export function StorefrontView({
   onSelectShoppingContext,
   explanations,
   isAiGenerated,
+  health,
   onOpenTransparency,
   onViewProduct,
   onResetSession,
@@ -70,6 +72,20 @@ export function StorefrontView({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDetailProduct, setSelectedDetailProduct] = useState<Product | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  const dbStatus = useMemo(() => {
+    if (health?.status === 'unhealthy') {
+      return { label: 'Database Reconnecting / Offline', dot: 'bg-red-500' };
+    }
+    const count = products.length || 32;
+    if (health?.database === 'postgresql') {
+      return { label: `${count} PostgreSQL Cloud Items`, dot: 'bg-emerald-500' };
+    }
+    if (health?.database === 'sqlite') {
+      return { label: `${count} Local SQLite Items`, dot: 'bg-emerald-500' };
+    }
+    return { label: `${count} Curated Catalogue Items`, dot: 'bg-indigo-500' };
+  }, [health, products.length]);
 
   const handleOpenDetail = (product: Product) => {
     setSelectedDetailProduct(product);
@@ -129,13 +145,13 @@ export function StorefrontView({
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
-            Explore 32 productivity tools, creator peripherals, and desk essentials backed by a deterministic SQLite catalogue. As you shop, FairCart AI balances customer savings with real merchant margin safety.
+            Explore 32 productivity tools, creator peripherals, and desk essentials backed by our curated catalogue. As you shop, FairCart AI balances customer savings with real merchant margin safety.
           </p>
 
           <div className="pt-1 flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-500">
             <span className="inline-flex items-center space-x-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>32 Local SQLite Items</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${dbStatus.dot}`} />
+              <span>{dbStatus.label}</span>
             </span>
             <span className="hidden sm:inline">·</span>
             <span className="inline-flex items-center space-x-1.5 font-medium">

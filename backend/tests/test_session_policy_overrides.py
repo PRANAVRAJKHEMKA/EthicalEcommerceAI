@@ -518,6 +518,178 @@ class TestSessionPolicyOverridesAndValidation(unittest.TestCase):
         self.assertEqual(active_decision["cart_total"], 355.0)
         self.assertEqual(active_decision["items_count"], 3)
 
+    def test_reproduce_mouse_and_stand_bundle_offer_to_cart_consistency(self):
+        """Reproduces Step 5.15 scenario:
+        1. Cart has Precision Vertical Wireless Mouse ($65).
+        2. Riser Stand ($55) is offered at 10% discount ($49.50) under 50% margin floor.
+        3. User adds Stand bundle to cart.
+        4. Verifies backend approves $49.50 in cart_quote, subtotal is $114.50, and margin is 50.22% >= 50%.
+        5. Verifies frontend revalidation against cart_quote preserves the approved $49.50 price.
+        """
+        from backend.app.engine.orchestrator import DecisionOrchestrator
+        from backend.app.models.schemas import DecisionRequest, CartItemInput
+
+        orchestrator = DecisionOrchestrator(repository=self.repo)
+        catalog = {e.id: e for e in self.repo.get_all_entities()}
+
+        # Step 1: Engine B evaluates candidate Stand (item-005) when cart has Mouse (item-003)
+        # under session-scoped 50% margin floor and 20% discount cap
+        stand_opt = orchestrator.optimizer.optimize(
+            cart_items=[(catalog["item-003"], 1)],
+            candidate=catalog["item-005"],
+            margin_floor=0.50,
+            discount_cap=0.20,
+        )
+        self.assertTrue(stand_opt.is_offered, "Stand bundle must be offered under 50% margin floor")
+        self.assertEqual(stand_opt.final_price, 49.50)
+        self.assertEqual(stand_opt.discount_percentage, 0.10)
+        self.assertEqual(stand_opt.savings, 5.50)
+        self.assertAlmostEqual(stand_opt.basket_gross_margin, 0.5022, places=4)
+        self.assertGreaterEqual(stand_opt.basket_gross_margin, 0.50)
+
+        # Step 2: User clicks "Add Bundle for $49.50".
+        # Cart now contains Mouse ($65) and Stand ($49.50, 10% discount requested).
+        updated_cart = [
+            {"product_id": "item-003", "quantity": 1, "discountedPrice": None, "appliedDiscountPct": None},
+            {"product_id": "item-005", "quantity": 1, "discountedPrice": 49.50, "appliedDiscountPct": 0.10, "appliedCondition": stand_opt.conditions},
+        ]
+        applied_discounts = {"item-005": 0.10}
+
+        # Step 3: Backend processes decision for the 2-item cart with applied discount
+        followup_req = DecisionRequest(
+            session_id="test-session-mouse-stand",
+            cart_items=[
+                CartItemInput(product_id="item-003", quantity=1),
+                CartItemInput(product_id="item-005", quantity=1),
+            ],
+            applied_discounts=applied_discounts,
+            margin_floor=0.50,
+            discount_cap=0.20,
+        )
+        followup_res = orchestrator.process_decision(followup_req)
+
+        self.assertIsNotNone(followup_res.cart_quote, "Cart quote must be generated for 2-item cart")
+        quote = followup_res.cart_quote
+
+        # Find quote items
+        mouse_qi = next(i for i in quote.items if i.product_id == "item-003")
+        stand_qi = next(i for i in quote.items if i.product_id == "item-005")
+
+        # Authoritative prices from backend
+        self.assertEqual(mouse_qi.unit_price, 65.00)
+        self.assertEqual(mouse_qi.discount_percentage, 0.0)
+        self.assertEqual(stand_qi.unit_price, 49.50)
+        self.assertEqual(stand_qi.discount_percentage, 0.10)
+        self.assertEqual(stand_qi.savings, 5.50)
+        self.assertIn("Bundle discount (10% off)", stand_qi.applied_condition)
+
+        # Authoritative monetary totals
+        self.assertEqual(quote.standard_subtotal, 120.00)
+        self.assertEqual(quote.final_subtotal, 114.50)
+        self.assertEqual(quote.total_savings, 5.50)
+        self.assertGreaterEqual(quote.basket_gross_margin, 0.50, "Basket gross margin must satisfy 50% floor")
+        self.assertEqual(quote.basket_gross_margin, 0.5022)
+
+        # Sum of line totals integrity check
+        calculated_final = sum(item.line_total for item in quote.items)
+        self.assertEqual(quote.final_subtotal, calculated_final)
+
+        # Step 4: Emulate the fixed frontend revalidation logic against cart_quote
+        quote_items_by_id = {qi.product_id: qi for qi in quote.items}
+        revalidated_cart = []
+        for item in updated_cart:
+            qi = quote_items_by_id.get(item["product_id"])
+            if qi and qi.discount_percentage > 0:
+                revalidated_cart.append({
+                    **item,
+                    "discountedPrice": qi.unit_price,
+                    "appliedDiscountPct": qi.discount_percentage,
+                    "appliedCondition": qi.applied_condition,
+                })
+            else:
+                revalidated_cart.append({
+                    **item,
+                    "discountedPrice": None,
+                    "appliedDiscountPct": None,
+                    "appliedCondition": qi.applied_condition if qi else None,
+                })
+
+        stand_in_cart = next(i for i in revalidated_cart if i["product_id"] == "item-005")
+        self.assertEqual(stand_in_cart["discountedPrice"], 49.50, "Stand must keep approved $49.50 in cart state")
+        self.assertEqual(stand_in_cart["appliedDiscountPct"], 0.10)
+
+    def test_discounts_revoked_safely_when_margin_floor_breached(self):
+        """Verifies that if active cart with requested discount breaches the merchant margin floor,
+        the backend revokes the discount and returns clear explanation in applied_condition.
+        """
+        from backend.app.engine.orchestrator import DecisionOrchestrator
+        from backend.app.models.schemas import DecisionRequest, CartItemInput
+
+        orchestrator = DecisionOrchestrator(repository=self.repo)
+
+        # Mouse ($65, COGS $32) + Stand ($55, COGS $25) with 10% discount on Stand gives 50.22% margin.
+        # Set margin_floor to 52% (0.52) -> 50.22% < 52.0%, so discount breaches the floor!
+        req = DecisionRequest(
+            session_id="test-session-breach",
+            cart_items=[
+                CartItemInput(product_id="item-003", quantity=1),
+                CartItemInput(product_id="item-005", quantity=1),
+            ],
+            applied_discounts={"item-005": 0.10},
+            margin_floor=0.52,
+            discount_cap=0.20,
+        )
+        res = orchestrator.process_decision(req)
+        quote = res.cart_quote
+        self.assertIsNotNone(quote)
+
+        stand_qi = next(i for i in quote.items if i.product_id == "item-005")
+        self.assertEqual(stand_qi.discount_percentage, 0.0, "Discount must be revoked when breaching 52% floor")
+        self.assertEqual(stand_qi.unit_price, 55.00, "Price must revert to reference price $55.00")
+        self.assertEqual(stand_qi.savings, 0.0)
+        self.assertIn("revoked", stand_qi.applied_condition.lower())
+        self.assertIn("52.0%", stand_qi.applied_condition)
+
+        self.assertEqual(quote.final_subtotal, 120.00)
+        self.assertEqual(quote.total_savings, 0.00)
+        self.assertGreaterEqual(quote.basket_gross_margin, 0.52, "Resulting margin must satisfy 52% floor")
+        self.assertEqual(quote.basket_gross_margin, 0.525)
+
+    def test_bundle_discount_revoked_when_prerequisite_items_removed(self):
+        """Verifies that an unbundled standalone item in the cart cannot retain a bundle discount."""
+        from backend.app.engine.orchestrator import DecisionOrchestrator
+        from backend.app.models.schemas import DecisionRequest, CartItemInput
+
+        orchestrator = DecisionOrchestrator(repository=self.repo)
+
+        # Stand alone in cart, but client requested 10% discount
+        req = DecisionRequest(
+            session_id="test-session-standalone",
+            cart_items=[
+                CartItemInput(product_id="item-005", quantity=1),
+            ],
+            applied_discounts={"item-005": 0.10},
+            margin_floor=0.50,
+            discount_cap=0.20,
+        )
+        res = orchestrator.process_decision(req)
+        quote = res.cart_quote
+        self.assertIsNotNone(quote)
+
+        stand_qi = next(i for i in quote.items if i.product_id == "item-005")
+        self.assertEqual(stand_qi.discount_percentage, 0.0, "Standalone item must have bundle discount revoked")
+        self.assertEqual(stand_qi.unit_price, 55.00)
+        self.assertIn("multiple items", stand_qi.applied_condition)
+        self.assertEqual(quote.final_subtotal, 55.00)
+
+    def test_global_merchant_settings_remain_unchanged_after_session_tests(self):
+        """Confirms that none of the session-scoped policy or discount evaluations mutated database settings."""
+        settings_db = self.repo.get_merchant_settings()
+        margin_floor = settings_db.get("margin_floor") if isinstance(settings_db, dict) else settings_db.margin_floor
+        discount_cap = settings_db.get("discount_cap") if isinstance(settings_db, dict) else settings_db.discount_cap
+        self.assertAlmostEqual(margin_floor, 0.20, places=2)
+        self.assertAlmostEqual(discount_cap, 0.20, places=2)
+
 
 if __name__ == "__main__":
     unittest.main()
