@@ -1,7 +1,10 @@
 import json
 import sqlite3
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from backend.app.config import settings
 from backend.app.db.database import get_connection
 from backend.app.models.schemas import Product
 
@@ -84,7 +87,18 @@ class OrderEntity:
             return []
 
 class CatalogRepository:
-    """Repository handling all database queries for the product catalog and merchant settings."""
+    """Repository handling all database queries for the product catalog and merchant settings.
+
+    Employs thread-safe, bounded in-process caching for static catalog products and merchant settings,
+    eliminating redundant database round-trips while preserving full isolation and cache invalidation.
+    """
+
+    # Bounded in-process cache keyed by target database identifier
+    _catalog_cache: dict[str, tuple[float, list[ProductEntity]]] = {}
+    _settings_cache: dict[str, tuple[float, dict[str, float]]] = {}
+    _cache_lock = threading.Lock()
+    _CATALOG_TTL_SECONDS = 300.0  # 5 minutes for immutable catalog items
+    _SETTINGS_TTL_SECONDS = 60.0  # 1 minute for merchant policy settings
 
     def __init__(
         self,
@@ -95,6 +109,28 @@ class CatalogRepository:
         self.db_path = db_path
         self.database_url = database_url
         self.allow_fallback = allow_fallback
+
+    def _get_db_key(self) -> str:
+        """Computes a unique key for the target database to ensure isolated cache entries."""
+        if self.database_url:
+            return f"pg:{self.database_url}"
+        if self.db_path:
+            return f"sqlite:{self.db_path}"
+        active_url = settings.DATABASE_URL
+        if active_url:
+            return f"pg:{active_url}"
+        return f"sqlite:{settings.DATABASE_PATH}"
+
+    @classmethod
+    def invalidate_cache(cls, db_key: str | None = None) -> None:
+        """Invalidates in-process catalog and settings cache for a given database target or all targets."""
+        with cls._cache_lock:
+            if db_key is not None:
+                cls._catalog_cache.pop(db_key, None)
+                cls._settings_cache.pop(db_key, None)
+            else:
+                cls._catalog_cache.clear()
+                cls._settings_cache.clear()
 
     def _get_connection(self):
         """Creates an active database connection using the configured path or database URL."""
@@ -128,27 +164,34 @@ class CatalogRepository:
 
     def count_products(self) -> int:
         """Returns the total number of products in the catalog."""
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM products;")
-            row = cursor.fetchone()
-            return row[0] if row else 0
-        finally:
-            conn.close()
+        return len(self.get_all_entities())
 
     def get_all_products(self) -> list[Product]:
         """Retrieves all products from the catalog as public schema models."""
         return [e.to_product_schema() for e in self.get_all_entities()]
 
     def get_all_entities(self) -> list[ProductEntity]:
-        """Retrieves all products from the catalog as authoritative integer-cent ProductEntities."""
+        """Retrieves all products from the catalog as authoritative integer-cent ProductEntities.
+
+        Uses in-process caching to eliminate repetitive ~2s database network latency during high-frequency
+        recommendation decision requests.
+        """
+        db_key = self._get_db_key()
+        now = time.perf_counter()
+        with self._cache_lock:
+            cached = self._catalog_cache.get(db_key)
+            if cached and (now - cached[0]) < self._CATALOG_TTL_SECONDS:
+                return cached[1]
+
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM products ORDER BY id ASC;")
             rows = cursor.fetchall()
-            return [self._row_to_entity(r) for r in rows]
+            entities = [self._row_to_entity(r) for r in rows]
+            with self._cache_lock:
+                self._catalog_cache[db_key] = (now, entities)
+            return entities
         finally:
             conn.close()
 
@@ -159,14 +202,11 @@ class CatalogRepository:
 
     def get_entity_by_id(self, product_id: str) -> ProductEntity | None:
         """Retrieves a single product by its unique ID as an authoritative ProductEntity."""
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM products WHERE id = ?;", (product_id,))
-            row = cursor.fetchone()
-            return self._row_to_entity(row) if row else None
-        finally:
-            conn.close()
+        all_entities = self.get_all_entities()
+        for e in all_entities:
+            if e.id == product_id:
+                return e
+        return None
 
     def get_products_by_ids(self, product_ids: list[str]) -> list[Product]:
         """Retrieves multiple products given a list of IDs as public schema models."""
@@ -176,6 +216,13 @@ class CatalogRepository:
         """Retrieves multiple products given a list of IDs as authoritative ProductEntities."""
         if not product_ids:
             return []
+        all_entities = self.get_all_entities()
+        entity_map = {e.id: e for e in all_entities}
+        result = [entity_map[pid] for pid in product_ids if pid in entity_map]
+        if len(result) == len(set(product_ids)):
+            return result
+
+        # Fallback to direct query if any requested product is missing from cache
         placeholders = ",".join("?" for _ in product_ids)
         conn = self._get_connection()
         try:
@@ -187,23 +234,36 @@ class CatalogRepository:
             conn.close()
 
     def get_merchant_settings(self) -> dict[str, float]:
-        """Retrieves merchant policy settings (margin floor, discount cap) from SQLite."""
-        settings = {"margin_floor": 0.20, "discount_cap": 0.20}
+        """Retrieves merchant policy settings (margin floor, discount cap) from SQLite with bounded caching."""
+        db_key = self._get_db_key()
+        now = time.perf_counter()
+        with self._cache_lock:
+            cached = self._settings_cache.get(db_key)
+            if cached and (now - cached[0]) < self._SETTINGS_TTL_SECONDS:
+                return dict(cached[1])
+
+        settings_dict = {"margin_floor": 0.20, "discount_cap": 0.20}
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM merchant_settings;")
             rows = cursor.fetchall()
             for r in rows:
-                settings[r["key"]] = float(r["value"])
-            return settings
+                settings_dict[r["key"]] = float(r["value"])
+            with self._cache_lock:
+                self._settings_cache[db_key] = (now, settings_dict)
+            return settings_dict
         except Exception:
-            return settings
+            return settings_dict
         finally:
             conn.close()
 
     def update_merchant_setting(self, key: str, value: float) -> None:
-        """Updates a merchant policy setting in SQLite."""
+        """Updates a merchant policy setting in SQLite and invalidates cached settings."""
+        db_key = self._get_db_key()
+        with self._cache_lock:
+            self._settings_cache.pop(db_key, None)
+
         conn = self._get_connection()
         try:
             cursor = conn.cursor()

@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import math
+from pydantic import BaseModel, Field, field_validator
 
 class HealthResponse(BaseModel):
     """Health check response schema."""
@@ -39,10 +40,33 @@ class DecisionRequest(BaseModel):
     discount_cap: float = Field(default=0.20, ge=0.0, le=0.50, description="Maximum single-item discount percentage cap")
     # Milestone 4C: Independent Recommendation Anchors
     viewed_product_ids: list[str] = Field(default_factory=list, description="Recently viewed product IDs in current session")
+    hovered_product_ids: list[str] = Field(default_factory=list, description="Recently hovered product IDs passing >=700ms dwell threshold in active session")
     saved_cart_product_ids: list[str] = Field(default_factory=list, description="Product IDs in an explicitly saved cart")
     historical_order_product_ids: list[str] = Field(default_factory=list, description="Product IDs from completed prior FairCart orders")
     user_id: str | None = Field(default=None, description="Authenticated shopper user ID if signed in")
     search_query: str = Field(default="", description="Active or recent search query within the application")
+
+    @field_validator("margin_floor")
+    @classmethod
+    def validate_margin_floor(cls, v: float) -> float:
+        if v is None:
+            return 0.20
+        if not math.isfinite(v) or math.isnan(v):
+            raise ValueError("margin_floor must be a finite numerical value")
+        if v < 0.0 or v > 1.0:
+            raise ValueError("margin_floor must be between 0.0 and 1.0")
+        return round(float(v), 4)
+
+    @field_validator("discount_cap")
+    @classmethod
+    def validate_discount_cap(cls, v: float) -> float:
+        if v is None:
+            return 0.20
+        if not math.isfinite(v) or math.isnan(v):
+            raise ValueError("discount_cap must be a finite numerical value")
+        if v < 0.0 or v > 0.50:
+            raise ValueError("discount_cap must be between 0.0 and 0.50 (50% max promotional cap)")
+        return round(float(v), 4)
 
 class IncentiveResponse(BaseModel):
     """Engine B economic incentive optimization output."""
@@ -134,6 +158,24 @@ class MerchantSettingsRequest(BaseModel):
     margin_floor: float = Field(ge=0.0, le=1.0, description="Minimum gross margin threshold")
     discount_cap: float = Field(ge=0.0, le=0.50, description="Maximum single-item discount cap")
 
+    @field_validator("margin_floor")
+    @classmethod
+    def validate_settings_margin_floor(cls, v: float) -> float:
+        if not math.isfinite(v) or math.isnan(v):
+            raise ValueError("margin_floor must be a finite numerical value")
+        if v < 0.0 or v > 1.0:
+            raise ValueError("margin_floor must be between 0.0 and 1.0")
+        return round(float(v), 4)
+
+    @field_validator("discount_cap")
+    @classmethod
+    def validate_settings_discount_cap(cls, v: float) -> float:
+        if not math.isfinite(v) or math.isnan(v):
+            raise ValueError("discount_cap must be a finite numerical value")
+        if v < 0.0 or v > 0.50:
+            raise ValueError("discount_cap must be between 0.0 and 0.50 (50% max promotional cap)")
+        return round(float(v), 4)
+
 class ExplanationRequest(BaseModel):
     """Request payload for asynchronous Gemini natural language explanation."""
     session_id: str = "sess-default"
@@ -184,6 +226,28 @@ class SimulationRequest(BaseModel):
     random_seed: int = Field(default=42, description="Pseudorandom seed for reproducible paired scenario generation")
     margin_floor: float | None = Field(default=None, ge=0.0, le=1.0, description="Override gross margin floor (defaults to active SQLite merchant setting)")
     discount_cap: float | None = Field(default=None, ge=0.0, le=0.50, description="Override discount cap (defaults to active SQLite merchant setting)")
+
+    @field_validator("margin_floor")
+    @classmethod
+    def validate_sim_margin_floor(cls, v: float | None) -> float | None:
+        if v is not None:
+            if not math.isfinite(v) or math.isnan(v):
+                raise ValueError("margin_floor must be a finite numerical value")
+            if v < 0.0 or v > 1.0:
+                raise ValueError("margin_floor must be between 0.0 and 1.0")
+            return round(float(v), 4)
+        return None
+
+    @field_validator("discount_cap")
+    @classmethod
+    def validate_sim_discount_cap(cls, v: float | None) -> float | None:
+        if v is not None:
+            if not math.isfinite(v) or math.isnan(v):
+                raise ValueError("discount_cap must be a finite numerical value")
+            if v < 0.0 or v > 0.50:
+                raise ValueError("discount_cap must be between 0.0 and 0.50 (50% max promotional cap)")
+            return round(float(v), 4)
+        return None
 
 class PolicyMetrics(BaseModel):
     """Authoritative aggregated financial and conversion metrics for a simulated policy."""

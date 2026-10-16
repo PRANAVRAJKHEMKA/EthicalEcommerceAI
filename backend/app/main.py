@@ -663,6 +663,8 @@ ALLOWED_EVENT_TYPES = {
     "recommendation_accepted",
     "offer_shown",
     "context_selected",
+    "page_view",
+    "navigation_changed",
     "simulated_purchase_completed",
     "order_completed",
 }

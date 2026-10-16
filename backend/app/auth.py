@@ -70,10 +70,13 @@ def check_login_rate_limit(identifier: str, max_failures: int = 5, window_second
             detail=f"Too many failed login attempts. Please wait {window_seconds} seconds before trying again.",
         )
 
-def clear_login_failures(identifier: str) -> None:
-    """Clears failed login attempts upon successful authentication."""
-    if identifier in FAILED_LOGIN_ATTEMPTS:
-        del FAILED_LOGIN_ATTEMPTS[identifier]
+def clear_login_failures(identifier: str | None = None) -> None:
+    """Clears failed login attempts upon successful authentication or test isolation setup."""
+    if identifier:
+        if identifier in FAILED_LOGIN_ATTEMPTS:
+            del FAILED_LOGIN_ATTEMPTS[identifier]
+    else:
+        FAILED_LOGIN_ATTEMPTS.clear()
 
 def hash_password(password: str) -> str:
     """Hashes a password with Argon2id."""

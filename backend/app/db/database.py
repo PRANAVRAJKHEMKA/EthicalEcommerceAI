@@ -17,12 +17,15 @@ from backend.app.config import settings
 logger = logging.getLogger("faircart.db")
 
 
-def is_postgres(database_url: str | None = None) -> bool:
+_DEFAULT = object()
+
+
+def is_postgres(database_url: Any = _DEFAULT) -> bool:
     """Returns True if the active or specified database connection is PostgreSQL."""
-    url = database_url if database_url is not None else settings.DATABASE_URL
+    url = settings.DATABASE_URL if database_url is _DEFAULT else database_url
     if not url:
         return False
-    clean = url.strip().lower()
+    clean = str(url).strip().lower()
     return clean.startswith("postgres://") or clean.startswith("postgresql://")
 
 
@@ -141,6 +144,120 @@ class PostgresConnectionWrapper:
             self.commit()
 
 
+class PooledPostgresConnectionWrapper(PostgresConnectionWrapper):
+    """Wraps a pooled psycopg connection. Calling close() returns connection to pool instead of destroying socket."""
+
+    def __init__(self, raw_conn, pool: "PostgresConnectionPool"):
+        super().__init__(raw_conn)
+        self._pool = pool
+        self._closed = False
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            self._pool.return_connection(self._conn)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is not None:
+                self.rollback()
+            else:
+                self.commit()
+        finally:
+            self.close()
+
+
+class PostgresConnectionPool:
+    """Thread-safe connection pool for PostgreSQL (e.g. Neon Serverless Postgres).
+
+    Eliminates redundant ~1.8s TLS/TCP connection handshakes on every repository query
+    while ensuring thread-safe access, transaction isolation, and stale connection recovery.
+    """
+
+    def __init__(self, target_url: str, max_connections: int = 5, connect_timeout: int = 4):
+        import queue
+        import threading
+
+        self.target_url = target_url
+        self.max_connections = max_connections
+        self.connect_timeout = connect_timeout
+        self._pool: queue.Queue = queue.Queue(maxsize=max_connections)
+        self._lock = threading.Lock()
+        self._active_count = 0
+
+    def _create_raw_connection(self):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        pg_url = self.target_url.strip()
+        if pg_url.startswith("postgres://"):
+            pg_url = "postgresql://" + pg_url[11:]
+
+        return psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=self.connect_timeout)
+
+    def get_connection(self) -> PooledPostgresConnectionWrapper:
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                if not conn.closed:
+                    try:
+                        conn.rollback()
+                        return PooledPostgresConnectionWrapper(conn, self)
+                    except Exception:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+            except Exception:
+                break
+
+        # Pool empty or discarded dead connection: open fresh connection
+        raw_conn = self._create_raw_connection()
+        return PooledPostgresConnectionWrapper(raw_conn, self)
+
+    def return_connection(self, raw_conn):
+        if raw_conn.closed:
+            return
+        try:
+            raw_conn.rollback()
+            self._pool.put_nowait(raw_conn)
+        except Exception:
+            try:
+                raw_conn.close()
+            except Exception:
+                pass
+
+    def close_all(self):
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                conn.close()
+            except Exception:
+                pass
+
+
+import threading
+
+_pg_pools: dict[str, PostgresConnectionPool] = {}
+_pg_pools_lock = threading.Lock()
+
+
+def get_postgres_pool(target_url: str) -> PostgresConnectionPool:
+    """Retrieves or creates a thread-safe connection pool for the specified PostgreSQL target."""
+    with _pg_pools_lock:
+        if target_url not in _pg_pools:
+            _pg_pools[target_url] = PostgresConnectionPool(target_url)
+        return _pg_pools[target_url]
+
+
+def close_all_postgres_pools() -> None:
+    """Closes all underlying physical sockets across all active PostgreSQL connection pools."""
+    with _pg_pools_lock:
+        for pool in _pg_pools.values():
+            pool.close_all()
+        _pg_pools.clear()
+
+
 def mask_db_url(url: str | None) -> str:
     """Masks credentials in a database URL for safe logging and error reporting (e.g. postgresql://***:***@host:port/db)."""
     if not url:
@@ -152,11 +269,12 @@ def get_connection(
     db_path: str | None = None,
     database_url: str | None = None,
     allow_fallback: bool | None = None,
+    use_pool: bool = True,
 ) -> Any:
     """Creates and returns an active database connection.
     
-    If database_url (or settings.DATABASE_URL) is a valid PostgreSQL URI, connects via
-    psycopg to PostgreSQL (e.g. Neon Serverless Postgres).
+    If database_url (or settings.DATABASE_URL when db_path is not specified) is a valid PostgreSQL URI,
+    connects via psycopg to PostgreSQL (e.g. Neon Serverless Postgres) using safe connection pooling.
     
     Persistence Safeguards:
     - In production (settings.ENVIRONMENT in ('production', 'prod')), silent fallback to SQLite
@@ -166,22 +284,32 @@ def get_connection(
       it falls back to local SQLite with a warning for offline developer workflows.
     - Credentials in target_url are masked before any logging or exception messages.
     """
-    target_url = database_url if database_url is not None else settings.DATABASE_URL
+    if database_url is not None:
+        target_url = database_url
+    elif db_path is not None:
+        target_url = None
+    else:
+        target_url = settings.DATABASE_URL
+
     is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
     fallback_permitted = False if is_prod else (allow_fallback if allow_fallback is not None else True)
 
     if is_postgres(target_url):
         masked_url = mask_db_url(target_url)
         try:
-            import psycopg
-            from psycopg.rows import dict_row
+            if use_pool:
+                pool = get_postgres_pool(target_url)
+                return pool.get_connection()
+            else:
+                import psycopg
+                from psycopg.rows import dict_row
 
-            pg_url = target_url.strip()
-            if pg_url.startswith("postgres://"):
-                pg_url = "postgresql://" + pg_url[11:]
+                pg_url = target_url.strip()
+                if pg_url.startswith("postgres://"):
+                    pg_url = "postgresql://" + pg_url[11:]
 
-            conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=2)
-            return PostgresConnectionWrapper(conn)
+                conn = psycopg.connect(pg_url, row_factory=dict_row, connect_timeout=4)
+                return PostgresConnectionWrapper(conn)
         except Exception as e:
             if not fallback_permitted:
                 logger.error(
@@ -215,8 +343,8 @@ def init_db(
     
     Compatible with both SQLite and PostgreSQL.
     """
-    target_url = database_url if database_url is not None else settings.DATABASE_URL
-    conn = get_connection(db_path, target_url, allow_fallback=allow_fallback)
+    conn = get_connection(db_path, database_url, allow_fallback=allow_fallback)
+    is_pg = isinstance(conn, PostgresConnectionWrapper)
     try:
         cursor = conn.cursor()
 
@@ -239,7 +367,7 @@ def init_db(
         """)
 
         # Migration helper for earlier SQLite schemas
-        if not is_postgres(target_url):
+        if not is_pg:
             cursor.execute("PRAGMA table_info(products);")
             columns = [row["name"] for row in cursor.fetchall()]
             if "subcategory" not in columns:

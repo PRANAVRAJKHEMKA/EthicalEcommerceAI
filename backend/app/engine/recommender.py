@@ -254,6 +254,8 @@ EVENT_INTERACTION_WEIGHTS: dict[str, float] = {
     "recommendation_shown": 0.00,
     "offer_shown": 0.00,
     "context_selected": 0.00,
+    "page_view": 0.00,
+    "navigation_changed": 0.00,
     "remove_from_cart": 0.00,
     "cart_item_removed": 0.00,
 }
@@ -294,6 +296,8 @@ def calculate_session_interest_score(
 
         if etype in ("product_hover", "product_focus"):
             duration_ms = metadata.get("duration_ms")
+            if duration_ms is None:
+                duration_ms = metadata.get("dwell_ms")
             if duration_ms is not None and duration_ms < 700:
                 base_w = 0.00  # Brief hover below 700 ms contributes 0.00
 

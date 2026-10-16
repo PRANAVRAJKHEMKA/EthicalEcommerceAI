@@ -1,12 +1,12 @@
-# FairCart AI — Devpost Submission Readiness Audit (Milestone 6D)
+# FairCart AI — Devpost Submission Readiness Audit (Milestone 6E / Step 4B)
 
 > **Document Status:** Authoritative Submission Readiness Audit & Final Release Verification  
 > **Audited By:** Antigravity AI Pair Programmer & Code Quality System  
 > **Target Competition:** [Devpost Build With AI: Basics](https://learn-ai-basics.devpost.com/rules)  
 > **Skill Pack Source:** [challengepost/learn-ai-basics](https://github.com/challengepost/learn-ai-basics)  
-> **Audit Date & Local Time:** October 15, 2026, 23:35 IST  
-> **Audit Baseline Git Commit:** `fa7e73b` + Milestone 6D durability hardening  
-> **Test Baseline:** **135 / 135 unit tests passing**, **0 failures, 0 errors** in 35.417s  
+> **Audit Date & Local Time:** October 16, 2026, 21:00 IST<br>
+> **Audit Baseline Git Commit:** Milestone 6E / Step 4B Final Release Candidate<br>
+> **Test Baseline:** **164 / 164 unit tests passing**, **0 failures, 0 errors** in 40.841s
 
 ---
 
@@ -47,7 +47,7 @@ We audited every file in the project against official Devpost requirements:
 | [`.dockerignore`](../.dockerignore) | **Mandatory** (Security) | Exists; excludes `.local/`, `*.local.md`, `.env*`, `learner-profile*`, and `.git`. | Hardened in Milestone 6C to prevent build context leaks. | **PASS** |
 | [`Dockerfile`](../Dockerfile) | **Recommended** | Exists; multi-stage Docker build (Node 20 builder + Python 3.12 slim runtime). | Verified dynamic `$PORT` binding and healthcheck probe. | **PASS** |
 | [`skills-lock.json`](../skills-lock.json) | **Mandatory** (Skill Pack) | Exists; tracks 6 official challengepost skills with computed sha256 hashes. | Matches installed skills directory structure. | **PASS** |
-| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers. | 135 passing backend unit tests (Milestone 6D release checkpoint). | **PASS** |
+| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers, connection pooling, session policy overrides. | 164 passing backend unit tests (Milestone 6E / Step 4B release checkpoint). | **PASS** |
 | Frontend Source (`frontend/`) | **Mandatory** | 100% complete; React 19, Vite, Tailwind CSS, Lucide icons, responsive modals, CDP verified. | Built cleanly in 8.62s (99.55 kB gzip JS). | **PASS** |
 | `devpost/learner-profile.md` | **Private / Internal** | Exists; 3,821 bytes; contains personal learner notes and prior background. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
 | `.local/demo-credentials.local.md` | **Private / Internal** | Exists; 1,611 bytes; local demo seed log. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
@@ -105,17 +105,19 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **7** | **Project Description & Story** | Devpost Submission Form Fields | Comprehensive factual summary and technical outline prepared in Section 5.2. Personal responses must be submitted in learner's own words. | **NEEDS REVIEW** | **Learner Action** (Fill Devpost text fields) |
 | **8** | **Skill Pack Usage Explanation** | Devpost Required Text Field | `skills-lock.json` tracks all 6 skills from `challengepost/learn-ai-basics` (committed at `957c0fe`). 6-stage workflow documented. | **PASS** | Automated / Verified |
 | **9** | **Age-of-Majority Confirmation** | Devpost Required Checkbox | Mandatory legal eligibility confirmation checkbox on Devpost form. Must be confirmed personally by learner. | **NEEDS REVIEW** | **Learner Action** (Check confirmation box) |
-| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **141 / 141 unit tests pass** in 31.7s (0 failures, 0 errors). Frontend builds cleanly in 3.5s. Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
+| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **164 / 164 unit tests pass** in 40.8s (0 failures, 0 errors). Frontend builds cleanly in 3.8s. Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
 
 ---
 
 ## 5.1 Submitter Action Guide (Separation of Responsibilities)
 
 ### A. Completed & Verified by Agent (Zero Further Coding Needed)
-- [x] **Code Complete:** 141 automated backend tests pass; frontend TypeScript compiles cleanly.
+- [x] **Code Complete:** 164 automated backend tests pass; frontend TypeScript compiles cleanly.
 - [x] **Production Container:** Multi-stage `Dockerfile` with health probe and dynamic `$PORT`.
 - [x] **CORS Security Guardrail:** Strict production startup failure on wildcard `*` with credentials enabled (`resolve_cors_origins`).
-- [x] **Database Durability:** Dual SQLite / Neon PostgreSQL support with strict production startup failure (no silent fallback).
+- [x] **Database Durability & Pooling:** Dual SQLite / Neon PostgreSQL support with connection pooling and strict production startup failure (no silent fallback).
+- [x] **Session-Scoped Policies:** Per-browser merchant policy overrides for safe judge experimentation without database mutation.
+- [x] **Cart Quote & Margin Integrity:** Synchronous cart-to-quote verification, net revenue margin calculation, clear base vs bundle margins.
 - [x] **Credential Masking:** Connection strings scrubbed in logs (`mask_db_url`).
 - [x] **Security Hardening:** Redacted demo persona metadata, whitelisted rate-limited demo login, isolated order history, zero merchant admin escalation.
 - [x] **Planning Artifacts:** `scope.md`, `prd.md`, `spec.md`, `checklist.md`, `app-map.html`, `README.md`, `LICENSE` verified.
@@ -141,7 +143,7 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
    - *What it does:* Real-time constrained optimization bounding recommendations by non-bypassable margin floors and price ceilings.
    - *How you built it:* FastAPI, React 19, Gemini 2.5 Flash, Neon PostgreSQL/SQLite, guided by the Learn Skill Pack.
    - *Challenges:* Integer-cent arithmetic across bundles, Windows Python environment tuning, sub-25ms synchronous local decisions.
-   - *Accomplishments:* 135 passing tests, full 3-policy simulation comparator, Argon2id multi-persona demo auth.
+   - *Accomplishments:* 164 passing tests, session-scoped policy overrides, connection pooling, full 3-policy simulation comparator, Argon2id multi-persona demo auth.
    - *What you learned:* Flipped interaction, planning before coding (`scope` $\to$ `prd` $\to$ `spec`), and mathematical invariant preservation.
 5. **Skill Pack Usage Field:**
    - In the required question on Devpost, describe how you ran the 6 stages (`1-start` to `6-ship`) with the Learn Skill Pack (`challengepost/learn-ai-basics`).
@@ -160,5 +162,5 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **Planning Document Integrity** | `scope.md`, `prd.md`, `spec.md` completely match codebase architecture | **PASS** |
 | **Secret Hygiene** | Zero credentials in Git history; passwords redacted from public APIs; masked DB logs | **PASS** |
 | **Open Source Licensing** | MIT License file verified in repository root | **PASS** |
-| **Code Verification** | 135 unit tests pass; frontend builds with 0 type errors | **PASS** |
+| **Code Verification** | 164 unit tests pass; frontend builds with 0 type errors | **PASS** |
 | **Overall Submission Readiness** | Codebase and documentation 100% ready; submitter actions identified | **READY FOR REVIEW** |

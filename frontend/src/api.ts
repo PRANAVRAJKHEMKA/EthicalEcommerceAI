@@ -70,12 +70,13 @@ export async function fetchCatalog(): Promise<Product[]> {
   return res.json();
 }
 
-export async function fetchDecision(req: DecisionRequest): Promise<DecisionResponse> {
+export async function fetchDecision(req: DecisionRequest, signal?: AbortSignal): Promise<DecisionResponse> {
   const res = await fetch(`${API_BASE}/api/v1/decision`, {
     method: 'POST',
     headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(req),
+    signal,
   });
   if (!res.ok) {
     throw new Error(`Decision engine request failed with status ${res.status}`);
@@ -143,20 +144,99 @@ export async function updateMerchantSettings(
   return res.json();
 }
 
+export const DEFAULT_DEMO_POLICY: MerchantSettings = {
+  margin_floor: 0.20,
+  discount_cap: 0.20,
+};
+
+export function getSessionPolicy(): MerchantSettings {
+  if (typeof window === 'undefined') return { ...DEFAULT_DEMO_POLICY };
+  try {
+    const raw = sessionStorage.getItem('faircart_demo_policy');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (
+        typeof parsed.margin_floor === 'number' &&
+        isFinite(parsed.margin_floor) &&
+        typeof parsed.discount_cap === 'number' &&
+        isFinite(parsed.discount_cap)
+      ) {
+        return {
+          margin_floor: Math.max(0.0, Math.min(1.0, parsed.margin_floor)),
+          discount_cap: Math.max(0.0, Math.min(0.50, parsed.discount_cap)),
+        };
+      }
+    }
+  } catch {
+    // Fall back to default on parse failure
+  }
+  return { ...DEFAULT_DEMO_POLICY };
+}
+
+export function saveSessionPolicy(policy: MerchantSettings): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const cleanPolicy: MerchantSettings = {
+      margin_floor: Math.max(0.0, Math.min(1.0, policy.margin_floor)),
+      discount_cap: Math.max(0.0, Math.min(0.50, policy.discount_cap)),
+    };
+    sessionStorage.setItem('faircart_demo_policy', JSON.stringify(cleanPolicy));
+  } catch (err) {
+    console.warn('Failed to save session policy to sessionStorage:', err);
+  }
+}
+
+export function resetSessionPolicy(): MerchantSettings {
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.removeItem('faircart_demo_policy');
+    } catch {}
+  }
+  return { ...DEFAULT_DEMO_POLICY };
+}
+
+// Client-side recent event deduplication tracker (prevents rapid duplicate network traffic)
+const recentEventSignatures = new Map<string, number>();
+
 export async function recordSessionEvent(
   evt: SessionEventCreate
 ): Promise<{ status: string; event_id: string }> {
-  const res = await fetch(`${API_BASE}/api/v1/events`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(evt),
-  });
-  if (!res.ok) {
-    throw new Error(`Record session event failed with status ${res.status}`);
+  const now = Date.now();
+  const sigKey = evt.event_id || `${evt.session_id}:${evt.event_type}:${evt.product_id || ''}`;
+  const lastTime = recentEventSignatures.get(sigKey);
+
+  // Deduplicate identical signals triggered within 1200ms
+  if (lastTime && now - lastTime < 1200) {
+    return { status: 'deduplicated', event_id: evt.event_id || '' };
   }
-  return res.json();
+  recentEventSignatures.set(sigKey, now);
+
+  // Prune expired signatures to prevent unbounded memory growth
+  if (recentEventSignatures.size > 200) {
+    for (const [key, ts] of recentEventSignatures.entries()) {
+      if (now - ts > 10000) {
+        recentEventSignatures.delete(key);
+      }
+    }
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(evt),
+    });
+    if (!res.ok) {
+      console.warn(`Analytics event notice: status ${res.status}`);
+      return { status: 'failed_server', event_id: evt.event_id || '' };
+    }
+    return res.json();
+  } catch (err) {
+    console.warn('Asynchronous event recording notice:', err);
+    return { status: 'deferred_local', event_id: evt.event_id || '' };
+  }
 }
 
 export async function fetchSessionEvents(

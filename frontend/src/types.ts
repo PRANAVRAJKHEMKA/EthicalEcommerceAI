@@ -44,6 +44,7 @@ export interface DecisionRequest {
   margin_floor?: number;
   discount_cap?: number;
   viewed_product_ids?: string[];
+  hovered_product_ids?: string[];
   saved_cart_product_ids?: string[];
   historical_order_product_ids?: string[];
   search_query?: string;

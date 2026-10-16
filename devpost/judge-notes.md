@@ -1121,7 +1121,48 @@ OK (131/131 tests passing, 0 failures, 0 errors)
   4. **Credential Integrity Uncompromised:** `allow_credentials=True` remains strictly enabled to protect HttpOnly session cookies.
   5. **Automated Verification:** Added 6 new unit tests in `test_foundation.py` verifying production wildcard rejection, explicit origin normalization, development wildcard rejection, unauthorized origin preflight rejection, and verifying that the active FastAPI middleware configuration has zero silent fallback to `["*"]`. Test baseline increased from 135 to 141 passing tests (0 failures, 0 errors in 31.7s).
 
+---
 
+## 11. Milestone 6E / Step 4B: Session-Scoped Merchant Policies, Cart Quote Alignment, Margin Transparency & Responsiveness Hardening
 
+> **Release Checkpoint:** Milestone 6E / Step 4B Final Release Candidate<br>
+> **Verification Date & Time:** October 16, 2026, 21:00 IST<br>
+> **Automated Backend Tests:** **164 / 164 tests passing** (0 failures, 0 errors in 40.841s)<br>
+> **Frontend Production Build:** Built cleanly in 3.82s (0 type errors, 102.16 kB gzip JS, 6.78 kB gzip CSS)<br>
+> **Database Architecture:** Verified against Neon Serverless PostgreSQL with persistent restart survival and connection pooling.<br>
+> **Secret Hygiene:** 0 API keys, 0 passwords, 0 connection strings, and 0 credentials committed.
 
+### 11.1 Session-Scoped Merchant Policies & Multi-Tenant Isolation
+- **The Problem:** In production, global merchant settings (`POST /api/v1/settings`) are guarded by `ADMIN_TOKEN`. Giving public hackathon judges access to an admin token would allow a single user to alter global store policy for all subsequent visitors, or risk embedding privileged secrets in client-side bundles. Conversely, disabling policy controls in the demo would prevent judges from experiencing how adjusting the Gross Margin Floor immediately alters promotional decisions.
+- **The Solution:**
+  1. **Strict Global Isolation:** `POST /api/v1/settings` remains protected by `ADMIN_TOKEN` in production. Customer sessions receive `HTTP 403 Forbidden` if attempting to mutate global persistent state.
+  2. **Per-Browser Session Overrides:** The Merchant Console allows judges to configure local policy overrides (`margin_floor` and `discount_cap`) stored in browser `localStorage`.
+  3. **Request-Scoped Evaluation:** Overrides are sent with the customer's request (`merchant_policy_overrides`) to `POST /api/v1/decision` and `POST /api/v1/simulate`.
+  4. **Ephemerality & Zero Cross-Contamination:** Session overrides apply exclusively to the active judge's browser evaluation; they never mutate the shared Neon PostgreSQL database or affect other shoppers.
+  5. **Automated Coverage:** 4 dedicated tests in `test_session_policy_overrides.py` verify that session overrides take precedence in calculation, fall back gracefully to global settings when absent, enforce valid bounds (0–100%), and never modify persistent database records.
 
+### 11.2 Cart Quote Alignment & Subtotal Integrity
+- **The Problem:** Rapid basket changes or out-of-order asynchronous recommendation responses could lead to stale bundle quotes displaying totals or discounts calculated against earlier cart states.
+- **The Solution:**
+  1. **Strict Alignment Predicate:** Implemented `isQuoteAlignedWithCart(quote, cart)` in frontend components (`CartDrawer.tsx`, `CheckoutModal.tsx`, `App.tsx`), validating that every item ID and quantity in the quote matches the active cart exactly.
+  2. **Authoritative Subtotal Calculation:** Basket subtotal is computed strictly from live cart line totals ($\sum \text{quantity} \times \text{reference\_price}$), ensuring savings and discounts are subtracted accurately without stale offsets.
+  3. **In-Flight Quote State:** Added an "Updating quote..." visual indicator during basket transitions and disabled checkout confirmation until the active quote aligns with current cart contents.
+
+### 11.3 Margin Transparency: Catalogue Base Margin vs. Verified Bundle Margin
+- **The Problem:** Certain retail products natively carry slim supplier margins below typical merchant target floors (e.g., low-margin hardware baseline at 12% vs. 15% floor). When shoppers added these items, the cart displayed a margin below the floor, creating the false appearance of an economic guardrail violation even though FairCart AI awarded **zero promotional discount** (`NO_OFFER`).
+- **The Solution:**
+  1. **Transparent Attribution:** Clarified display labels between **Catalogue Base Margin** (the intrinsic supplier margin before any discounts) and **Verified Bundle Margin** (post-incentive basket margin).
+  2. **Clear Explanatory Tooltips:** When an un-discounted item has a native margin below the target floor, the UI explicitly notes: *"Pre-existing catalogue baseline is below floor. FairCart AI protected the merchant by issuing no promotional discount."*
+  3. **Revenue Math Accuracy:** Verified in `test_decision_engine.py` that basket margin calculations strictly use net transaction revenue ($\text{Net Revenue} = \text{Total Price} - \text{Discount}$), preventing mathematical distortion.
+
+### 11.4 Recommendation Responsiveness & Database Connection Pooling
+- **The Problem:** Remote PostgreSQL round-trips to cloud databases (Neon US-East) incur ~1,850ms TLS handshakes per query when opening fresh connections, causing recommendation requests to feel sluggish. Additionally, hover events and rapid cart clicks sent duplicate in-flight requests.
+- **The Solution:**
+  1. **PostgreSQL Connection Pool:** Built `PostgresConnectionPool` and `PooledPostgresConnectionWrapper` in `backend/app/db/database.py`, maintaining reusable warmed connections. Subsequent queries execute in 250–480ms instead of 1,850ms+.
+  2. **Catalog & Settings Caching:** `CatalogRepository` caches the static 32-item catalog (300s TTL) and merchant settings (60s TTL), keyed by database URL. Cart entity validation in `process_decision` resolves in 0ms from in-memory cache without redundant round-trips.
+  3. **Immediate Shopping Intent Payload:** Added `hovered_product_ids: list[str]` to `DecisionRequest`. When a shopper hovers on a product for $\ge 700\text{ ms}$, the product ID is immediately passed in `fetchDecision`, incorporating hover context without waiting for asynchronous background event writes.
+  4. **Request Cancellation:** Frontend uses `AbortController` in `fetchDecision` to cancel superseded in-flight recommendation queries when new interactions occur, eliminating network congestion.
+
+### 11.5 Complete Test Suite Expansion (164 Tests Passing)
+- **Hermetic Test Isolation:** Added `test_00_test_isolation.py` and hardened `backend/tests/__init__.py` to enforce that tests run strictly against local SQLite memory/temporary fixtures, guaranteeing zero accidental writes, tables drops, or test state contamination against live Neon databases.
+- **Verification Results:** Full automated test suite passes 164 tests in 40.841s (0 failures, 0 errors, exit code 0).

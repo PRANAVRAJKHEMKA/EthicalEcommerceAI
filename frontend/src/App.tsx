@@ -7,6 +7,7 @@ import {
   RecommendationItem,
   ItemExplanation,
   UserProfile,
+  MerchantSettings,
 } from './types.ts';
 import {
   fetchHealth,
@@ -18,6 +19,8 @@ import {
   fetchCurrentUser,
   logoutUser,
   createSimulatedOrder,
+  getSessionPolicy,
+  saveSessionPolicy,
 } from './api.ts';
 import { Header } from './components/Header.tsx';
 import { CartDrawer } from './components/CartDrawer.tsx';
@@ -99,6 +102,9 @@ export default function App() {
     }
   });
 
+  // Session-scoped demo merchant policy overrides
+  const [sessionPolicy, setSessionPolicy] = useState<MerchantSettings>(getSessionPolicy);
+
   // Cart state persisted to user-scoped localStorage
   const [cart, setCart] = useState<CartItem[]>(() => loadUserCart());
 
@@ -120,6 +126,7 @@ export default function App() {
 
   // Decision Engine state
   const [decision, setDecision] = useState<DecisionResponse | null>(null);
+  const [isDecisionLoading, setIsDecisionLoading] = useState<boolean>(false);
 
   // AI & Deterministic Explanations state
   const [explanations, setExplanations] = useState<Record<string, ItemExplanation>>({});
@@ -139,12 +146,13 @@ export default function App() {
   // Viewed product IDs persisted to user-scoped localStorage
   const [viewedProductIds, setViewedProductIds] = useState<string[]>(() => loadUserViewedIds());
 
+  // Active intentional hover product IDs passing >= 700ms dwell threshold
+  const [hoveredProductIds, setHoveredProductIds] = useState<string[]>([]);
+
   const [decisionRevision, setDecisionRevision] = useState(0);
   const triggerDecisionFetch = useCallback(() => {
     setDecisionRevision((r) => r + 1);
   }, []);
-
-  const hoverDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Incremental sequence ID guard to prevent stale asynchronous decision responses from overwriting newer recommendations
   const decisionRequestIdRef = useRef<number>(0);
@@ -164,6 +172,19 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  // SPA Navigation View Tracking (deduplicated strictly by active tab transitions)
+  useEffect(() => {
+    const navEpisodeId = `nav-${activeTab}-${Date.now()}`;
+    recordSessionEvent({
+      session_id: sessionId,
+      event_type: 'page_view',
+      shopping_context: shoppingContext,
+      metadata: { page: activeTab },
+      event_id: navEpisodeId,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+  }, [activeTab, sessionId]);
 
   const handleLoginSuccess = (loggedInUser: UserProfile) => {
     setUser(loggedInUser);
@@ -191,79 +212,73 @@ export default function App() {
   };
 
   const handleViewProduct = useCallback(
-    async (productId: string) => {
+    (productId: string) => {
       const episodeId = `view-${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      try {
-        await recordSessionEvent({
-          session_id: sessionId,
-          event_type: 'product_view',
-          product_id: productId,
-          shopping_context: shoppingContext,
-          event_id: episodeId,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Failed to record product_view event:', e);
-      }
-
-      setViewedProductIds((prev) => {
-        const next = [productId, ...prev.filter((id) => id !== productId)].slice(0, 10);
-        return next;
+      // Asynchronous non-blocking analytics recording
+      recordSessionEvent({
+        session_id: sessionId,
+        event_type: 'product_view',
+        product_id: productId,
+        shopping_context: shoppingContext,
+        event_id: episodeId,
+        timestamp: new Date().toISOString(),
+      }).catch((e) => {
+        console.warn('Failed to record product_view event:', e);
       });
-      triggerDecisionFetch();
+
+      // Synchronous immediate UI state update (triggers decision effect automatically)
+      setViewedProductIds((prev) => {
+        if (prev[0] === productId) return prev;
+        return [productId, ...prev.filter((id) => id !== productId)].slice(0, 10);
+      });
     },
-    [sessionId, shoppingContext, triggerDecisionFetch]
+    [sessionId, shoppingContext]
   );
 
   const handleProductHover = useCallback(
-    async (productId: string, durationMs: number, episodeId: string) => {
-      try {
-        await recordSessionEvent({
-          session_id: sessionId,
-          event_type: 'product_hover',
-          product_id: productId,
-          shopping_context: shoppingContext,
-          event_id: episodeId,
-          timestamp: new Date().toISOString(),
-          metadata: { dwell_ms: durationMs },
-        });
-      } catch (e) {
-        console.error('Failed to record product_hover event:', e);
-      }
+    (productId: string, durationMs: number, episodeId: string) => {
+      // Asynchronous non-blocking analytics recording
+      recordSessionEvent({
+        session_id: sessionId,
+        event_type: 'product_hover',
+        product_id: productId,
+        shopping_context: shoppingContext,
+        event_id: episodeId,
+        timestamp: new Date().toISOString(),
+        metadata: { duration_ms: durationMs, dwell_ms: durationMs },
+      }).catch((e) => {
+        console.warn('Failed to record product_hover event:', e);
+      });
 
-      if (hoverDebounceRef.current) {
-        clearTimeout(hoverDebounceRef.current);
-      }
-      hoverDebounceRef.current = setTimeout(() => {
-        triggerDecisionFetch();
-      }, 350);
+      // Immediately register intentional hover in active session intent state
+      setHoveredProductIds((prev) => {
+        if (prev[0] === productId) return prev;
+        return [productId, ...prev.filter((id) => id !== productId)].slice(0, 10);
+      });
     },
-    [sessionId, shoppingContext, triggerDecisionFetch]
+    [sessionId, shoppingContext]
   );
 
   const handleProductFocus = useCallback(
-    async (productId: string, episodeId: string) => {
-      try {
-        await recordSessionEvent({
-          session_id: sessionId,
-          event_type: 'product_focus',
-          product_id: productId,
-          shopping_context: shoppingContext,
-          event_id: episodeId,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Failed to record product_focus event:', e);
-      }
+    (productId: string, episodeId: string) => {
+      recordSessionEvent({
+        session_id: sessionId,
+        event_type: 'product_focus',
+        product_id: productId,
+        shopping_context: shoppingContext,
+        event_id: episodeId,
+        timestamp: new Date().toISOString(),
+        metadata: { duration_ms: 700, dwell_ms: 700 },
+      }).catch((e) => {
+        console.warn('Failed to record product_focus event:', e);
+      });
 
-      if (hoverDebounceRef.current) {
-        clearTimeout(hoverDebounceRef.current);
-      }
-      hoverDebounceRef.current = setTimeout(() => {
-        triggerDecisionFetch();
-      }, 350);
+      setHoveredProductIds((prev) => {
+        if (prev[0] === productId) return prev;
+        return [productId, ...prev.filter((id) => id !== productId)].slice(0, 10);
+      });
     },
-    [sessionId, shoppingContext, triggerDecisionFetch]
+    [sessionId, shoppingContext]
   );
 
   // Save dismissedIds to localStorage
@@ -346,6 +361,7 @@ export default function App() {
     setCart([]);
     setDismissedIds(new Set());
     setViewedProductIds([]);
+    setHoveredProductIds([]);
     try {
       const cartKey = `faircart_cart_${user?.id || 'guest'}`;
       const viewedKey = `faircart_viewed_ids_${user?.id || 'guest'}`;
@@ -363,11 +379,14 @@ export default function App() {
     triggerDecisionFetch();
   }, [sessionId, user?.id, triggerDecisionFetch]);
 
-  // Query Decision Engine whenever cart contents, shoppingContext, viewedProductIds, user, or revision change
+  // Query Decision Engine whenever cart contents, shoppingContext, viewedProductIds, hoveredProductIds, user, or revision change
   // Guards against race conditions by discarding stale asynchronous responses
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
     const currentRequestId = ++decisionRequestIdRef.current;
+
+    setIsDecisionLoading(true);
 
     const appliedDiscounts: Record<string, number> = {};
     cart.forEach((i) => {
@@ -376,36 +395,54 @@ export default function App() {
       }
     });
 
-    fetchDecision({
-      session_id: sessionId,
-      user_id: user?.id,
-      cart_items: cart.map((i) => ({
-        product_id: i.product.id,
-        quantity: i.quantity,
-      })),
-      applied_discounts: appliedDiscounts,
-      shopping_context: shoppingContext,
-      viewed_product_ids: viewedProductIds,
-      dwell_time_seconds: 30,
-      margin_floor: 0.20,
-      discount_cap: 0.20,
-    })
+    fetchDecision(
+      {
+        session_id: sessionId,
+        user_id: user?.id,
+        cart_items: cart.map((i) => ({
+          product_id: i.product.id,
+          quantity: i.quantity,
+        })),
+        applied_discounts: appliedDiscounts,
+        shopping_context: shoppingContext,
+        viewed_product_ids: viewedProductIds,
+        hovered_product_ids: hoveredProductIds,
+        dwell_time_seconds: 30,
+        margin_floor: sessionPolicy.margin_floor,
+        discount_cap: sessionPolicy.discount_cap,
+      },
+      controller.signal
+    )
       .then((data) => {
         if (isMounted && currentRequestId === decisionRequestIdRef.current) {
           setDecision(data);
+          setIsDecisionLoading(false);
         }
       })
       .catch((err) => {
+        if (err.name === 'AbortError') return;
         console.error('Decision pipeline error:', err);
         if (isMounted && currentRequestId === decisionRequestIdRef.current) {
           setDecision(null);
+          setIsDecisionLoading(false);
         }
       });
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [cart, shoppingContext, viewedProductIds, sessionId, user?.id, decisionRevision]);
+  }, [
+    cart,
+    shoppingContext,
+    viewedProductIds,
+    hoveredProductIds,
+    sessionId,
+    user?.id,
+    decisionRevision,
+    sessionPolicy.margin_floor,
+    sessionPolicy.discount_cap,
+  ]);
 
   // Revalidate cart bundle discounts against latest backend decision
   // Automatically revokes discounts if prerequisite items are removed
@@ -471,7 +508,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [decision, shoppingContext, cart]);
+  }, [decision?.request_id, shoppingContext]);
 
   // Cart operations
   const handleAddToCart = (
@@ -677,9 +714,18 @@ export default function App() {
               onResetSession={handleResetSession}
               onHoverProduct={handleProductHover}
               onFocusProduct={handleProductFocus}
+              isUpdating={isDecisionLoading}
             />
           ) : (
-            <MerchantView products={products} health={health} />
+            <MerchantView
+              products={products}
+              health={health}
+              sessionPolicy={sessionPolicy}
+              onPolicyChange={(newPolicy) => {
+                setSessionPolicy(newPolicy);
+                saveSessionPolicy(newPolicy);
+              }}
+            />
           )}
         </main>
       </div>
@@ -703,6 +749,8 @@ export default function App() {
         basketQuote={decision?.cart_quote}
         explanations={explanations}
         isAiGenerated={isAiGenerated}
+        isQuoteUpdating={isDecisionLoading}
+        marginFloor={sessionPolicy.margin_floor}
       />
 
       {/* Simulated Checkout Modal */}
@@ -712,6 +760,8 @@ export default function App() {
         cart={cart}
         onCompleteOrder={handleCompleteOrder}
         basketQuote={decision?.cart_quote}
+        isQuoteUpdating={isDecisionLoading}
+        marginFloor={sessionPolicy.margin_floor}
       />
 
       {/* Transparency & AI Firewall Modal */}

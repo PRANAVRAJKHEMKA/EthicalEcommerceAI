@@ -20,12 +20,9 @@ class TestDemoAuthentication(unittest.TestCase):
         cls.client = TestClient(app)
 
     def setUp(self):
-        # Clear rate-limit state between tests to isolate behaviors
-        clear_login_failures("testclient")
-        clear_demo_login_limits("testclient")
-        for username in self.credentials_map.keys():
-            clear_login_failures(username)
-            clear_demo_login_limits(username)
+        # Clear rate-limit state completely between tests to isolate behaviors
+        clear_login_failures()
+        clear_demo_login_limits()
 
     def test_demo_personas_endpoint_returns_five_personas(self):
         """Verifies GET /api/v1/auth/demo-personas lists all 5 distinct personas."""

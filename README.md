@@ -9,7 +9,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-135%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-164%20Passing-brightgreen.svg)]()
 
 ---
 
@@ -21,9 +21,11 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
 3. **Opaque black-box models** that neither shoppers nor merchants can interpret or audit.
 
 **FairCart AI reverses this paradigm.** It optimizes collaborative transaction value and merchant contribution profit under mathematical economic guardrails:
-- **Non-bypassable Gross-Margin Floor:** Every discount is evaluated across the entire basket ($\text{Basket Gross Margin} \ge \text{Configured Floor}$).
+- **Non-bypassable Gross-Margin Floor & Margin Transparency:** Every discount is evaluated across the entire basket ($\text{Basket Gross Margin} \ge \text{Configured Floor}$). The interface clearly separates **Catalogue Base Margin** (supplier baseline) from **Verified Bundle Margin** (post-discount economics), preventing false alarms on natively low-margin items.
+- **Session-Scoped Merchant Policies:** Evaluators and hackathon judges can safely adjust margin floor and discount cap sliders in the Merchant Console via isolated, per-browser session overrides without altering shared global database state or requiring administrative secrets.
+- **Cart Quote Alignment & Subtotal Integrity:** Cart drawer and checkout modals strictly verify quote alignment against active basket contents, ensuring accurate line-item totals and avoiding stale or mismatched discount applications.
 - **Immutable Reference Price Ceiling:** Personalization can never increase prices above authoritative catalogue reference prices.
-- **Hybrid Recommendation Pipeline:** 10-stage recommender combining Apriori basket association rules, session interaction history (views, intentional dwell hovers), context filtering, supervised ranking (`HistGradientBoostingClassifier`), and Maximal Marginal Relevance (MMR) diversity reranking.
+- **Hybrid Recommendation Pipeline:** 10-stage recommender combining Apriori basket association rules, session interaction history (views, intentional dwell hovers $\ge 700\text{ms}$), context filtering, supervised ranking (`HistGradientBoostingClassifier`), and Maximal Marginal Relevance (MMR) diversity reranking.
 - **Dual Explainability:** Generates plain-language customer rationale via Google Gemini 2.5 Flash when `GEMINI_API_KEY` is configured, with an instant sub-5ms deterministic offline fallback when unconfigured or offline. Merchants receive exact mathematical attribution logs.
 - **Three-Policy Economic Simulator:** Monte Carlo comparator evaluating No Discount vs. Blanket 15% Promotion vs. FairCart AI with Common Random Numbers (CRN) across 1,000 synthetic sessions. Designed to validate pipeline mechanics and margin trade-offs; does not claim real-world consumer uplift or live market revenue.
 
@@ -37,8 +39,9 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
                      │   React 19 / Vite Single Page App    │
                      │  - Shopper Storefront (`/`)          │
                      │  - Merchant Console (`/merchant`)    │
-                     │  - localStorage: Cart & Intent       │
+                     │  - localStorage: Cart & Policy State │
                      │  - HttpOnly Cookie: Customer Session │
+                     │  - AbortController Request Cancel    │
                      └──────────────────┬───────────────────┘
                                         │
                        HTTPS / REST API │ Sub-25ms synchronous decision pipeline
@@ -51,19 +54,22 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
                      │    - MMR Diversity Reranking         │
                      │  Engine B: Margin-Safe Optimizer     │
                      │    - Margin Floor + Discount Cap     │
+                     │    - Session Policy Overrides        │
                      │  Engine C: Dual Explainability       │
                      │    - Gemini 2.5 Flash + Deterministic│
                      │  Economic Simulator (3-Policy CRN)   │
                      │  Argon2id Authentication & Sessions  │
+                     │  In-Memory Catalog & Settings Cache  │
                      └──────────────────┬───────────────────┘
                                         │
                        ┌────────────────┴────────────────┐
                        ▼                                 ▼
              Local Development                 Production Persistence
           SQLite Database (faircart.db)       Neon Serverless PostgreSQL
-          - Deterministic startup seed        - Permanent order history
-          - 32 products, 980 rules            - Durable merchant sliders
-          - 5 demo accounts, 15 orders        - Zero-cost tier compatible
+          - Deterministic startup seed        - PostgresConnectionPool
+          - 32 products, 980 rules            - Permanent order history
+          - 5 demo accounts, 15 orders        - Connection reuse (250-480ms)
+          - Zero-cost tier compatible         - Zero-cost tier compatible
 ```
 
 ---
@@ -108,7 +114,7 @@ npm run dev
 
 ### 3. Run Automated Tests
 ```bash
-# Execute the full backend test suite (141 tests passing at Milestone 6D release checkpoint)
+# Execute the full backend test suite (164 tests passing at Step 4B release checkpoint)
 python -m unittest discover -s backend/tests -p "test_*.py"
 
 # Verify frontend production build
@@ -144,6 +150,7 @@ FairCart AI supports two database persistence runtimes configured via the `DATAB
 - **Mode 2 — Neon Serverless PostgreSQL (Durable Cloud Persistence):**  
   Configured by setting `DATABASE_URL=postgresql://user:password@ep-xyz.neon.tech/neondb?sslmode=require`.  
   Enables permanent persistence of simulated checkouts, merchant policy slider adjustments, and simulation runs across cloud container cold boots.
+  - **Connection Pooling & Latency:** Utilizes `PostgresConnectionPool` to eliminate repeated TLS connection overhead to cloud endpoints, keeping query latency between 250–480ms.
   - **Production Fail-Safe Protection:** When production is configured (`ENVIRONMENT=production` or `allow_fallback=False`), a failed PostgreSQL connection raises a `RuntimeError` halting startup or reports `HTTP 503 Service Unavailable` on `/api/v1/health`. It **never** silently switches to ephemeral SQLite in production, ensuring operators are alerted rather than experiencing silent data loss upon container sleep.
   - **Credential Masking:** Connection credentials are automatically scrubbed (`postgresql://***:***@host:port/db`) in all system logs and exceptions.
   - **Permitted Development Fallback:** In non-production development environments where `allow_fallback=True` is explicitly permitted, the engine falls back to local SQLite with a logged warning for offline convenience.

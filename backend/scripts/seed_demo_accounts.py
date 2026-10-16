@@ -303,12 +303,20 @@ def seed_demo_accounts(db_path: str | None = None, rotate: bool = False) -> dict
         cursor = conn.cursor()
 
         # 1. Provision Users
+        from backend.app.auth import verify_password
+
         for p in DEMO_PERSONAS:
             u = p["username"]
             existing_user = repo.get_user_by_username(u)
 
             if existing_user and not rotate and u in existing_creds:
-                final_creds[u] = existing_creds[u]
+                if verify_password(existing_user.password_hash, existing_creds[u]):
+                    final_creds[u] = existing_creds[u]
+                else:
+                    raw_pass = existing_creds[u]
+                    p_hash = ph.hash(raw_pass)
+                    final_creds[u] = raw_pass
+                    cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?;", (p_hash, u))
             else:
                 raw_pass = generate_random_password(p["password_prefix"])
                 p_hash = ph.hash(raw_pass)

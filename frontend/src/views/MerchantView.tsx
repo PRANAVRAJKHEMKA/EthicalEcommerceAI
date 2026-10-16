@@ -30,23 +30,37 @@ import {
   updateMerchantSettings,
   runSimulation,
   fetchLatestSimulation,
+  getSessionPolicy,
+  saveSessionPolicy,
+  resetSessionPolicy,
+  DEFAULT_DEMO_POLICY,
 } from '../api.ts';
 
 interface MerchantViewProps {
   products: Product[];
   health?: HealthStatus | null;
+  sessionPolicy?: MerchantSettings;
+  onPolicyChange?: (newPolicy: MerchantSettings) => void;
 }
 
-export function MerchantView({ products, health }: MerchantViewProps) {
-  // Policy settings state
-  const [settings, setSettings] = useState<MerchantSettings>({
-    margin_floor: 0.20,
-    discount_cap: 0.20,
+export function MerchantView({ products, health, sessionPolicy, onPolicyChange }: MerchantViewProps) {
+  // Policy settings state initialized from active demo session policy
+  const [settings, setSettings] = useState<MerchantSettings>(() => {
+    return sessionPolicy || getSessionPolicy();
   });
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  const [isGlobalPersisted, setIsGlobalPersisted] = useState<boolean>(false);
+
+  // Sync if parent updates sessionPolicy prop
+  useEffect(() => {
+    if (sessionPolicy) {
+      setSettings(sessionPolicy);
+    }
+  }, [sessionPolicy?.margin_floor, sessionPolicy?.discount_cap]);
 
   // Demo-safe administrative access token (persisted strictly in browser session)
   const [adminToken, setAdminToken] = useState<string>(() => {
@@ -81,7 +95,7 @@ export function MerchantView({ products, health }: MerchantViewProps) {
     return acc;
   }, {});
 
-  // Load merchant policy settings & latest simulation from backend SQLite
+  // Load merchant policy settings & latest simulation from backend
   useEffect(() => {
     let isMounted = true;
     setLoadingSettings(true);
@@ -89,7 +103,15 @@ export function MerchantView({ products, health }: MerchantViewProps) {
     fetchMerchantSettings()
       .then((data) => {
         if (isMounted) {
-          setSettings(data);
+          // If no custom session policy is set in sessionStorage, use backend settings
+          try {
+            const stored = sessionStorage.getItem('faircart_demo_policy');
+            if (!stored && !sessionPolicy) {
+              setSettings(data);
+            }
+          } catch {
+            if (!sessionPolicy) setSettings(data);
+          }
         }
       })
       .catch((err) => {
@@ -118,9 +140,27 @@ export function MerchantView({ products, health }: MerchantViewProps) {
     try {
       setSavingSettings(true);
       setSaveError(null);
-      await updateMerchantSettings(settings, adminToken.trim() || undefined);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
+      setSessionNotice(null);
+
+      if (adminToken.trim()) {
+        const updated = await updateMerchantSettings(settings, adminToken.trim());
+        setSettings(updated);
+        setIsGlobalPersisted(true);
+        setSaveSuccess(true);
+        setSessionNotice('Global merchant settings successfully updated in the database.');
+        saveSessionPolicy(updated);
+        onPolicyChange?.(updated);
+        setTimeout(() => setSaveSuccess(false), 2500);
+      } else {
+        saveSessionPolicy(settings);
+        onPolicyChange?.(settings);
+        setIsGlobalPersisted(false);
+        setSaveSuccess(true);
+        setSessionNotice(
+          'Policy applied to this demo session. Storefront bundle rules and Monte Carlo simulator updated immediately. Shared merchant settings are unchanged.'
+        );
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to update merchant settings');
       if (err instanceof Error && err.message.includes('authorization')) {
@@ -132,20 +172,37 @@ export function MerchantView({ products, health }: MerchantViewProps) {
   };
 
   const handleResetDefaults = async () => {
-    const defaults: MerchantSettings = { margin_floor: 0.20, discount_cap: 0.20 };
+    const defaults: MerchantSettings = DEFAULT_DEMO_POLICY;
     setSettings(defaults);
-    try {
-      setSavingSettings(true);
-      await updateMerchantSettings(defaults, adminToken.trim() || undefined);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2000);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to reset settings');
-      if (err instanceof Error && err.message.includes('authorization')) {
-        setShowAdminInput(true);
+    setSaveError(null);
+    setSessionNotice(null);
+
+    if (adminToken.trim()) {
+      try {
+        setSavingSettings(true);
+        const updated = await updateMerchantSettings(defaults, adminToken.trim());
+        setSettings(updated);
+        setIsGlobalPersisted(true);
+        setSaveSuccess(true);
+        setSessionNotice('Default policy (20% margin floor / 20% discount cap) restored globally in database.');
+        resetSessionPolicy();
+        onPolicyChange?.(updated);
+        setTimeout(() => setSaveSuccess(false), 2500);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Failed to reset settings');
+        if (err instanceof Error && err.message.includes('authorization')) {
+          setShowAdminInput(true);
+        }
+      } finally {
+        setSavingSettings(false);
       }
-    } finally {
-      setSavingSettings(false);
+    } else {
+      resetSessionPolicy();
+      onPolicyChange?.(defaults);
+      setIsGlobalPersisted(false);
+      setSaveSuccess(true);
+      setSessionNotice('Default policy (20% margin floor / 20% discount cap) restored for this demo session.');
+      setTimeout(() => setSaveSuccess(false), 2500);
     }
   };
 
@@ -194,7 +251,22 @@ export function MerchantView({ products, health }: MerchantViewProps) {
         <div className="pt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
           <span className="inline-flex items-center space-x-1.5 font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            <span>SQLite WAL Persistence Active</span>
+            <span>
+              {health?.database === 'postgresql'
+                ? 'Neon PostgreSQL Active'
+                : 'SQLite WAL Persistence Active'}
+            </span>
+          </span>
+          <span>·</span>
+          <span className="inline-flex items-center space-x-1.5 font-medium">
+            <span className={`w-1.5 h-1.5 rounded-full ${isGlobalPersisted ? 'bg-emerald-500' : adminToken.trim() ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+            <span>
+              {isGlobalPersisted
+                ? 'Global Database Override Applied'
+                : adminToken.trim()
+                ? 'Admin Mode (Global Write)'
+                : 'Session-Scoped Policy Active'}
+            </span>
           </span>
           <span>·</span>
           <span className="inline-flex items-center space-x-1.5 font-medium">
@@ -217,7 +289,11 @@ export function MerchantView({ products, health }: MerchantViewProps) {
             <Database className="w-4 h-4 text-indigo-600" />
           </div>
           <div className="text-2xl font-bold text-slate-900 font-mono">{totalProducts} Products</div>
-          <p className="text-[11px] text-slate-500">Curated & seeded in SQLite database</p>
+          <p className="text-[11px] text-slate-500">
+            {health?.database === 'postgresql'
+              ? 'Curated & seeded in Neon PostgreSQL'
+              : 'Curated & seeded in SQLite database'}
+          </p>
         </div>
 
         <div className="bg-white p-4.5 rounded-xl border border-slate-200/90 shadow-sm space-y-1.5">
@@ -381,7 +457,7 @@ export function MerchantView({ products, health }: MerchantViewProps) {
               <button
                 onClick={handleResetDefaults}
                 disabled={savingSettings}
-                className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Reset Defaults (20%/20%)
               </button>
@@ -389,7 +465,7 @@ export function MerchantView({ products, health }: MerchantViewProps) {
               <button
                 onClick={handleSaveSettings}
                 disabled={savingSettings}
-                className="inline-flex items-center space-x-1.5 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="inline-flex items-center space-x-1.5 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
               >
                 {savingSettings ? (
                   <>
@@ -399,13 +475,20 @@ export function MerchantView({ products, health }: MerchantViewProps) {
                 ) : saveSuccess ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-white" />
-                    <span>Saved to SQLite!</span>
+                    <span>{adminToken.trim() ? 'Saved to Database!' : 'Applied to Session!'}</span>
                   </>
                 ) : (
-                  <span>Apply Policy Changes</span>
+                  <span>{adminToken.trim() ? 'Save Global Settings (Admin)' : 'Apply to Demo Session'}</span>
                 )}
               </button>
             </div>
+
+            {sessionNotice && (
+              <p className="text-xs text-indigo-700 bg-indigo-50 p-2.5 rounded-lg border border-indigo-200 flex items-start space-x-1.5">
+                <Info className="w-3.5 h-3.5 shrink-0 text-indigo-600 mt-0.5" />
+                <span>{sessionNotice}</span>
+              </p>
+            )}
 
             {saveError && (
               <p className="text-xs text-red-600 bg-red-50 p-2 rounded-lg border border-red-200 flex items-center space-x-1.5">

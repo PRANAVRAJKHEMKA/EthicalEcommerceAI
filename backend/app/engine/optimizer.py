@@ -43,6 +43,7 @@ class EconomicOptimizer:
         self,
         cart_items: list[tuple[ProductEntity, int]],
         candidate: ProductEntity,
+        applied_discounts: dict[str, float] | None = None,
         affinity_score: float = 0.50,
         dwell_time_seconds: int = 30,
         margin_floor: float = 0.20,
@@ -52,10 +53,24 @@ class EconomicOptimizer:
         """Determines the optimal incentive action for the candidate complementary product.
 
         All internal calculations are performed using exact integer cents.
+        Accounts for validated discounts already applied to existing cart items.
         """
         # 1. Authoritative basket revenue and COGS calculation in integer cents
-        parent_revenue_cents = sum(item.reference_price_cents * qty for item, qty in cart_items)
-        parent_cogs_cents = sum(item.cogs_cents * qty for item, qty in cart_items)
+        # Accurately reflect net revenue after approved discounts already applied to existing cart items
+        parent_revenue_cents = 0
+        parent_cogs_cents = 0
+        discounts = applied_discounts or {}
+
+        for item, qty in cart_items:
+            ref_cents = item.reference_price_cents
+            cogs_cents = item.cogs_cents
+            raw_disc = discounts.get(item.id, 0.0)
+            disc_pct = max(0.0, min(discount_cap, float(raw_disc))) if isinstance(raw_disc, (int, float)) else 0.0
+            discount_cents = round(ref_cents * disc_pct)
+            net_unit_cents = ref_cents - discount_cents
+
+            parent_revenue_cents += net_unit_cents * qty
+            parent_cogs_cents += cogs_cents * qty
 
         candidate_ref_cents = candidate.reference_price_cents
         candidate_cogs_cents = candidate.cogs_cents
@@ -169,11 +184,17 @@ class EconomicOptimizer:
                 incremental_utility_cents=round(best_incremental_utility, 2),
             )
         else:
-            reason = (
-                f"Incentive omitted: applying discount would breach the {margin_floor * 100.0:.1f}% gross margin floor."
-                if margin_deficit_encountered
-                else "Incentive omitted: standard pricing maximizes expected merchant contribution."
-            )
+            if baseline_gross_margin < margin_floor:
+                reason = (
+                    f"Incentive omitted: undiscounted catalogue basket margin ({baseline_gross_margin * 100.0:.1f}%) "
+                    f"is below the {margin_floor * 100.0:.1f}% gross margin floor. Discounts cannot be applied."
+                )
+            elif margin_deficit_encountered:
+                reason = (
+                    f"Incentive omitted: applying discount would breach the {margin_floor * 100.0:.1f}% gross margin floor."
+                )
+            else:
+                reason = "Incentive omitted: standard pricing maximizes expected merchant contribution."
             return OptimizationResult(
                 is_offered=False,
                 action_type="NONE",

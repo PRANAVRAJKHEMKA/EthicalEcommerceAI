@@ -10,6 +10,7 @@ Responsibilities:
 - Log latency in milliseconds with a strict sub-25ms SLA.
 """
 
+from datetime import datetime, timezone
 import time
 import uuid
 from backend.app.db.repository import CatalogRepository, ProductEntity
@@ -51,7 +52,8 @@ class DecisionOrchestrator:
 
         for entity, qty in cart_entities:
             ref_cents = entity.reference_price_cents
-            discount_pct = discounts.get(entity.id, 0.0)
+            raw_pct = discounts.get(entity.id, 0.0)
+            discount_pct = max(0.0, min(0.50, float(raw_pct))) if isinstance(raw_pct, (int, float)) else 0.0
             discount_cents = round(ref_cents * discount_pct)
             unit_cents = ref_cents - discount_cents
 
@@ -109,9 +111,10 @@ class DecisionOrchestrator:
         catalog = self.repository.get_all_entities()
         session_events = self.repository.get_session_events(request.session_id, limit=100)
 
-        # Retrieve unique product entities for items in cart
+        # Retrieve unique product entities for items in cart directly from cached catalog (0ms)
+        catalog_by_id = {e.id: e for e in catalog}
         product_ids = [item.product_id for item in request.cart_items] if request.cart_items else []
-        entities_by_id = {e.id: e for e in self.repository.get_entities_by_ids(product_ids)} if product_ids else {}
+        entities_by_id = {pid: catalog_by_id[pid] for pid in product_ids if pid in catalog_by_id}
 
         cart_entities: list[tuple[ProductEntity, int]] = []
         if request.cart_items:
@@ -205,7 +208,10 @@ class DecisionOrchestrator:
                 seen_anchor_ids.add(oid)
 
         # Anchor Source 4: Viewed items (weight 0.60)
-        viewed_ids = list(request.viewed_product_ids) if request.viewed_product_ids else session_viewed_ids
+        viewed_ids = list(request.viewed_product_ids or [])
+        for sid in session_viewed_ids:
+            if sid not in viewed_ids:
+                viewed_ids.append(sid)
         for vid in viewed_ids:
             if vid not in seen_anchor_ids:
                 v_count = view_counts.get(vid, 1)
@@ -221,7 +227,11 @@ class DecisionOrchestrator:
                 seen_anchor_ids.add(vid)
 
         # Anchor Source 5: Hovered items (weight 0.40)
-        for hid in session_hovered_ids:
+        hovered_ids = list(request.hovered_product_ids or [])
+        for sid in session_hovered_ids:
+            if sid not in hovered_ids:
+                hovered_ids.append(sid)
+        for hid in hovered_ids:
             if hid not in seen_anchor_ids:
                 h_count = hover_counts.get(hid, 1)
                 anchors.append(
@@ -235,13 +245,30 @@ class DecisionOrchestrator:
                 )
                 seen_anchor_ids.add(hid)
 
+        # Synthesize recent client-side hover events into session_events if not yet written to database
+        active_events = list(session_events)
+        existing_hover_pids = {
+            (evt.get("product_id") if isinstance(evt, dict) else getattr(evt, "product_id", ""))
+            for evt in session_events
+            if (evt.get("event_type") if isinstance(evt, dict) else getattr(evt, "event_type", "")) in ("product_hover", "product_focus")
+        }
+        for hid in (request.hovered_product_ids or []):
+            if hid and hid not in existing_hover_pids:
+                active_events.append({
+                    "product_id": hid,
+                    "event_type": "product_hover",
+                    "metadata": {"duration_ms": 700, "dwell_ms": 700},
+                    "age_hours": 0.0,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+
         # 4. Run Engine A (Ranked Candidates)
         candidates = self.recommender.find_recommendations(
             cart_items=cart_entities,
             catalog=catalog,
             shopping_context=request.shopping_context,
             session_viewed_ids=viewed_ids,
-            session_events=session_events,
+            session_events=active_events,
             anchors=anchors,
             search_query=request.search_query,
             top_k=4,
@@ -276,6 +303,7 @@ class DecisionOrchestrator:
                 opt_result = self.optimizer.optimize(
                     cart_items=cart_entities,
                     candidate=cand.product,
+                    applied_discounts=request.applied_discounts,
                     affinity_score=cand.affinity_score,
                     dwell_time_seconds=request.dwell_time_seconds,
                     margin_floor=request.margin_floor,

@@ -31,6 +31,7 @@ interface StorefrontViewProps {
   onResetSession?: () => void;
   onHoverProduct?: (productId: string, durationMs: number, episodeId: string) => void;
   onFocusProduct?: (productId: string, episodeId: string) => void;
+  isUpdating?: boolean;
 }
 
 const SHOPPING_CONTEXTS = [
@@ -63,6 +64,7 @@ export function StorefrontView({
   onResetSession,
   onHoverProduct,
   onFocusProduct,
+  isUpdating,
 }: StorefrontViewProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -189,6 +191,12 @@ export function StorefrontView({
                 <span className="ml-2 font-normal text-xs text-slate-500">
                   ({activeRecommendations.length} {activeRecommendations.some((r) => r.is_offered) ? 'tailored bundle offers' : 'discovery picks'})
                 </span>
+                {isUpdating && (
+                  <span className="ml-2 inline-flex items-center space-x-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/80 rounded-full px-2 py-0.5 animate-pulse">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                    <span>Refreshing...</span>
+                  </span>
+                )}
               </h2>
             </div>
             <div className="flex items-center space-x-3">

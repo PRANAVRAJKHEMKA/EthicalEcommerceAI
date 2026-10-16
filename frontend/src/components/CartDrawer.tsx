@@ -1,6 +1,32 @@
-import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, RotateCcw, ShieldCheck, Tag, Sparkles } from 'lucide-react';
+import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight, RotateCcw, ShieldCheck, Tag, Sparkles, RefreshCw } from 'lucide-react';
 import { CartItem, RecommendationItem, BasketQuote, ItemExplanation } from '../types.ts';
 import { RecommendationCard } from './RecommendationCard.tsx';
+
+/**
+ * Validates whether an asynchronous backend basket quote exactly corresponds
+ * to the current client cart contents and quantities.
+ */
+export function isQuoteAlignedWithCart(
+  quote: BasketQuote | null | undefined,
+  cart: CartItem[]
+): boolean {
+  if (!quote || !quote.items) return false;
+  if (cart.length === 0) return quote.items.length === 0;
+  if (quote.items.length !== cart.length) return false;
+
+  const quoteMap = new Map<string, number>();
+  for (const item of quote.items) {
+    quoteMap.set(item.product_id, (quoteMap.get(item.product_id) || 0) + item.quantity);
+  }
+
+  for (const cartItem of cart) {
+    const quoteQty = quoteMap.get(cartItem.product.id);
+    if (quoteQty !== cartItem.quantity) {
+      return false;
+    }
+  }
+  return true;
+}
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -17,6 +43,8 @@ interface CartDrawerProps {
   basketQuote?: BasketQuote | null;
   explanations?: Record<string, ItemExplanation>;
   isAiGenerated?: boolean;
+  isQuoteUpdating?: boolean;
+  marginFloor?: number;
 }
 
 export function CartDrawer({
@@ -34,29 +62,44 @@ export function CartDrawer({
   basketQuote,
   explanations,
   isAiGenerated,
+  isQuoteUpdating,
+  marginFloor,
 }: CartDrawerProps) {
   if (!isOpen) return null;
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Authoritative totals from backend quote when available, fallback to client calculation
-  const subtotal = basketQuote
-    ? basketQuote.final_subtotal
+  // Quote alignment verification: discard stale quotes from previous cart states
+  const isAligned = isQuoteAlignedWithCart(basketQuote, cart);
+  const activeQuote = isAligned ? basketQuote : null;
+  const isPending = Boolean(isQuoteUpdating || (!isAligned && cart.length > 0));
+
+  // Authoritative totals: use aligned backend quote when available, fallback to client line totals
+  const subtotal = activeQuote
+    ? activeQuote.final_subtotal
     : cart.reduce((sum, item) => {
         const price = item.discountedPrice ?? item.product.reference_price;
         return sum + price * item.quantity;
       }, 0);
 
-  const standardSubtotal = basketQuote
-    ? basketQuote.standard_subtotal
+  const standardSubtotal = activeQuote
+    ? activeQuote.standard_subtotal
     : cart.reduce(
         (sum, item) => sum + item.product.reference_price * item.quantity,
         0
       );
 
-  const totalSavings = basketQuote
-    ? basketQuote.total_savings
+  const totalSavings = activeQuote
+    ? activeQuote.total_savings
     : Math.max(0, standardSubtotal - subtotal);
+
+  // Margin calculation: use authoritative backend margin when aligned, or compute exact client baseline
+  const totalCogs = cart.reduce((sum, item) => sum + item.product.cogs * item.quantity, 0);
+  const clientGrossMargin = subtotal > 0 ? (subtotal - totalCogs) / subtotal : 0.0;
+  const displayedMargin = activeQuote ? activeQuote.basket_gross_margin : clientGrossMargin;
+  const hasActiveDiscount = totalSavings > 0.005;
+  const activeFloor = marginFloor ?? 0.20;
+  const isBelowFloor = displayedMargin < activeFloor;
 
   // Filter recommendations: not dismissed and not already in cart
   const activeRecommendations = recommendations.filter(
@@ -118,11 +161,12 @@ export function CartDrawer({
               <div className="space-y-4">
                 <div className="divide-y divide-slate-100">
                   {cart.map((item) => {
-                    const unitPrice = item.discountedPrice ?? item.product.reference_price;
-                    const lineTotal = unitPrice * item.quantity;
-                    const hasDiscount =
-                      item.discountedPrice !== undefined &&
-                      item.discountedPrice < item.product.reference_price;
+                    const quoteItem = activeQuote?.items.find((qi) => qi.product_id === item.product.id);
+                    const unitPrice = quoteItem ? quoteItem.unit_price : (item.discountedPrice ?? item.product.reference_price);
+                    const lineTotal = quoteItem ? quoteItem.line_total : unitPrice * item.quantity;
+                    const hasDiscount = quoteItem
+                      ? quoteItem.discount_percentage > 0
+                      : (item.discountedPrice !== undefined && item.discountedPrice < item.product.reference_price);
 
                     return (
                       <div key={item.product.id} className="py-3.5 flex items-start space-x-3">
@@ -247,7 +291,15 @@ export function CartDrawer({
           {cart.length > 0 && (
             <div className="p-5 border-t border-slate-200 bg-slate-50/80 space-y-3">
               {/* Subtotal & Savings Breakdown */}
-              <div className="space-y-1">
+              <div className="space-y-1.5">
+                {/* Pending Revalidation Status */}
+                {isPending && (
+                  <div className="flex items-center space-x-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200/80 rounded px-2.5 py-1 font-medium animate-pulse">
+                    <RefreshCw className="w-3 h-3 animate-spin shrink-0 text-amber-600" />
+                    <span>Revalidating authoritative quote & policy floor...</span>
+                  </div>
+                )}
+
                 {totalSavings > 0.005 && (
                   <div className="flex items-center justify-between text-xs text-emerald-700">
                     <span className="flex items-center space-x-1 font-medium">
@@ -257,20 +309,38 @@ export function CartDrawer({
                     <span className="font-mono font-bold">-${totalSavings.toFixed(2)}</span>
                   </div>
                 )}
+
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-600 font-medium">Cart Subtotal</span>
                   <span className="text-lg font-bold text-slate-900 font-mono">
                     ${subtotal.toFixed(2)}
                   </span>
                 </div>
-                {basketQuote && (
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
-                    <span>Verified Gross Margin</span>
-                    <span className="font-semibold text-indigo-700">
-                      {(basketQuote.basket_gross_margin * 100).toFixed(1)}%
+
+                {/* Margin Transparency & Floor Compliance */}
+                <div className="pt-1 border-t border-slate-200/60 space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-500">
+                      {hasActiveDiscount ? 'Verified Bundle Margin' : 'Catalogue Base Margin'}
+                    </span>
+                    <span className={`font-semibold ${hasActiveDiscount ? 'text-indigo-700' : 'text-slate-700'}`}>
+                      {(displayedMargin * 100).toFixed(1)}%
                     </span>
                   </div>
-                )}
+
+                  {!hasActiveDiscount && isBelowFloor && (
+                    <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/80 rounded px-2 py-1 leading-snug">
+                      Catalogue base margin ({(displayedMargin * 100).toFixed(1)}%) is below active{' '}
+                      {(activeFloor * 100).toFixed(0)}% floor. Discounts cannot be applied because catalogue prices cannot be raised.
+                    </div>
+                  )}
+
+                  {hasActiveDiscount && (
+                    <div className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded px-2 py-0.5 font-medium">
+                      Guaranteed: Bundle discount satisfies merchant {(activeFloor * 100).toFixed(0)}% margin floor.
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Ethical Commerce Trust Banner */}
@@ -283,15 +353,21 @@ export function CartDrawer({
               <div className="space-y-2 pt-1">
                 <button
                   onClick={onOpenCheckout}
-                  className="w-full flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg shadow-sm transition-colors text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                  disabled={isPending || cart.length === 0}
+                  className={`w-full flex items-center justify-center space-x-2 font-semibold py-2.5 px-4 rounded-lg shadow-sm transition-colors text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
+                    isPending || cart.length === 0
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
+                  }`}
+                  title={isPending ? 'Please wait while quote revalidates' : 'Simulate Checkout'}
                 >
-                  <span>Simulate Checkout</span>
+                  <span>{isPending ? 'Updating Quote...' : 'Simulate Checkout'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
                 <button
                   onClick={onClearCart}
-                  className="w-full flex items-center justify-center space-x-1.5 text-xs text-slate-500 hover:text-slate-800 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 rounded"
+                  className="w-full flex items-center justify-center space-x-1.5 text-xs text-slate-500 hover:text-slate-800 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 rounded cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Reset Cart</span>
