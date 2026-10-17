@@ -1306,3 +1306,59 @@ Added `backend/tests/test_expanded_catalog_recsys.py` covering all 12 test speci
 12. `test_deal_passport_counterfactual_on_new_catalog_items`: Confirms 3-scenario counterfactual evaluation (Baseline, Approved, Rejected) executes correctly for new categories.
 
 All **190 tests** pass in ~40.7s with 0 failures and 0 errors.
+
+---
+
+## 15. Step 5.19: Transaction Outcome Intelligence, Uplift Lab & Future Architecture Roadmap
+
+> **Release Checkpoint:** Step 5.19 Engineering Release Candidate<br>
+> **Automated Backend Tests:** **218 / 218 tests passing** (0 failures, 0 errors)<br>
+> **Frontend Production Build:** Built cleanly in 10.05s (0 type errors, 111.71 kB gzip JS, 6.98 kB gzip CSS)<br>
+> **Core Architectural Innovation:** First-party commerce event outcome ledger, Two-Model T-Learner causal uplift pipeline with held-out Qini curve evaluation, formal pricing-policy & fairness invariants, compressed archive security limits, and a dedicated Merchant Console Uplift Lab.
+
+### 15.1 First-Party Commerce Outcome Ledger
+- **Event Model & Tracking:** Captured the complete first-party commerce funnel: product views (`product_view`), searches (`search_submitted`), recommendation impressions (`recommendation_impression`), recommendation clicks (`recommendation_click`), cart additions (`add_to_cart`), cart removals (`remove_from_cart`), offer exposures (`offer_exposure`), offer acceptances (`offer_accepted`), offer rejections (`offer_rejected`), checkout initiations (`checkout_started`), completed demo orders (`demo_order_completed`), and actual paid orders (`order_completed`).
+- **Deduplication & Provenance:** Supported client-supplied idempotency IDs with database-level deduplication (`INSERT OR IGNORE`). Enriched metadata automatically with data provenance (`observed_demo`, `simulated_evaluation`, `actual_transaction`, `merchant_import`) and storefront identifier (`storefront_default`), facilitating future multi-store analytics.
+- **Privacy & Integrity:** Zero personally identifying information (PII) required or recorded. Clearly distinguished interactive sandbox demo orders from actual paid customer transactions.
+- **Funnel Metrics API:** Provided `GET /api/v1/analytics/funnel` returning aggregated funnel stages, recommendation CTR, offer acceptance rate, checkout completion rate, small sample warnings (<30 events), and audit trails.
+
+### 15.2 Two-Model T-Learner Offline Uplift Evaluation Engine
+- **Dataset Specification & Limitations:** Investigated the official Criteo Uplift Prediction Benchmark schema (12 continuous features `f0..f11`, CC BY-NC-SA 4.0 license, 85/15 treatment ratio). Addressed key limitations: public ad datasets omit wholesale COGS, product attributes, and retail basket margins.
+- **Synthetic Pipeline Evaluation:** Current evaluation results are strictly from the local synthetic mechanics fixture (`tests/fixtures/synthetic_uplift_data.csv`, N=1,000) used to verify causal modeling logic. Evaluation on the full-scale 2.3 GB Criteo benchmark remains pending and deferred to dedicated offline compute.
+- **Causal Architecture (`backend/app/engine/uplift.py`):**
+  - Fitted two regularized outcome models: $\mu_1(x) = P(Y=1 \mid x, T=1)$ on treated units, $\mu_0(x) = P(Y=1 \mid x, T=0)$ on control units.
+  - Estimated individual uplift: $\hat{\tau}(x) = \mu_1(x) - \mu_0(x)$.
+  - Evaluated on held-out test data (70/30 stratified train/test split) using empirical Qini curves and Area Under Uplift Curve (AUUC).
+  - Compared against **Conversion Propensity Baseline** (demonstrating why naive conversion likelihood targets "sure things" who convert anyway without an incentive) and **Random Baseline**.
+- **Three-Strategy Counterfactual Policy Simulation:**
+  - *Organic Baseline (0% Targeted):* Modeled baseline conversion, zero promotional expense.
+  - *Blanket 15% Markdown (100% Targeted):* Indiscriminate discounting under offline simulation, 100% incentive eligibility index.
+  - *FairCart Uplift-Targeted:* Targets synthetic shoppers where $\hat{\tau}(x) > 0$ (75.0% in synthetic test fixture). Under simulation assumptions, achieves higher modeled conversion with a lower incentive eligibility index. Note: Targeting 75% of shoppers reflects eligibility volume, not an audited measurement of realized financial subsidy savings.
+- **Compressed Archive & Resource Security:**
+  - Enforced gzip magic byte pre-flight validation (`0x1f 0x8b`).
+  - Added `DecompressionSizeLimiter` streaming guard capping decompressed bytes at 100 MB to prevent decompression bombs.
+  - Bounded input parsing to 50,000 rows and individual CSV cells to 1 MB.
+  - Strict directory allowlisting (`tests/fixtures` and `data/uplift`) rejecting arbitrary path traversal attempts with HTTP 400.
+
+### 15.3 Decoupling Uplift from Pricing Authority
+- **Strict Boundary:** Uplift models operate strictly as an offline research and targeting laboratory. They do not silently alter live storefront pricing or bypass merchant guardrails.
+- **Future Integration Model:** Documented how future integration will feed uplift estimates into the constrained optimizer:
+  $$\max_{i, d} \quad \hat{\tau}_i(X, d) \cdot \text{Utility}(i, d) \quad \text{s.t.} \quad \text{Basket Gross Margin} \ge \text{Floor}, \quad d \le \text{Cap}, \quad \text{Inventory} > 0$$
+- **Fair Deal Passport Notice:** Uplift is not presented to shoppers as a guaranteed individual fact or proven causal effect.
+
+### 15.4 Formal Pricing-Policy and Fairness Invariants
+Automated in `backend/tests/test_pricing_fairness_invariants.py`:
+1. *Price Ceiling Invariant:* Final offered price is $\le$ catalogue reference price for all items across all discount inputs; savings are strictly $\ge \$0.00$.
+2. *Determinism Invariant:* Identical basket, catalogue, and policy inputs produce bitwise identical quotes, recommendations, and margins across consecutive evaluations.
+3. *Monotonic Policy Sensitivity:* Tightening merchant margin floors (e.g. from 20% to 50%) never yields larger discounts or lower gross margins.
+4. *Explainable Blocked Offers:* Every blocked or revoked offer provides an audited mathematical rejection reason (`FAIL_MARGIN_DEFICIT`, `MARGIN_BELOW_FLOOR`).
+5. *Persona Independence Invariant:* Identical cart items receive identical pricing regardless of shopper persona labels (gamer, creator, student, deal seeker, anonymous).
+6. *Boundary Scope:* These tests establish algorithmic consistency, mathematical price bounds, and monotonic policy enforcement. They verify pricing-policy and fairness invariants, not comprehensive demographic fairness audits, as FairCart AI operates with a zero-PII architecture.
+
+### 15.5 Future Architecture Roadmap
+Retained for future development milestones:
+1. **Multi-Store Profit Intelligence:** Validated merchant analytics, multi-store comparison, and CSV sales/margin imports.
+2. **Concurrent Inventory-Aware Optimization:** Real-time stock reservation and dynamic scarcity bounding across concurrent sessions.
+3. **Demand & Sell-Through Forecasting:** Predictive replenishment modeling based on aggregated basket co-occurrence and seasonality.
+4. **Expanded Shopper-Intent Intelligence:** First-party behavioral session signals and voluntarily shared consumer preferences.
+5. **Authorized Advertising Integrations:** Google Analytics and Meta Business Conversions API integrations with explicit shopper consent.

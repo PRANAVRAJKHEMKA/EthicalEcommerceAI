@@ -378,4 +378,96 @@ export interface SimulationResponse {
   };
 }
 
+export interface FunnelStageMetrics {
+  product_views: number;
+  searches_submitted: number;
+  recommendation_impressions: number;
+  recommendation_clicks: number;
+  cart_adds: number;
+  cart_removes: number;
+  offer_exposures: number;
+  offer_acceptances: number;
+  offer_rejections: number;
+  checkouts_started: number;
+  demo_orders_completed: number;
+  actual_orders_completed: number;
+}
+
+export interface FunnelConversionRates {
+  recommendation_ctr: number;
+  offer_acceptance_rate: number;
+  checkout_completion_rate: number;
+  view_to_order_rate: number;
+}
+
+export interface FunnelMetricsResponse {
+  time_window_hours: number;
+  total_events: number;
+  funnel_stages: FunnelStageMetrics;
+  conversion_rates: FunnelConversionRates;
+  provenance_breakdown: Record<string, number>;
+  storefront_breakdown: Record<string, number>;
+  is_small_sample: boolean;
+  tracking_completeness: string;
+  methodology_disclaimer: string;
+  recent_events: Array<{
+    id: string;
+    session_id: string;
+    event_type: string;
+    product_id: string;
+    shopping_context: string;
+    provenance: string;
+    storefront_id: string;
+    timestamp: string;
+  }>;
+}
+
+export interface UpliftDecileMetric {
+  decile: number;
+  treated_count: number;
+  control_count: number;
+  treated_conversions: number;
+  control_conversions: number;
+  treated_conversion_rate: number;
+  control_conversion_rate: number;
+  incremental_uplift: number;
+  cumulative_qini: number;
+}
+
+export interface UpliftModelMetrics {
+  model_name: string;
+  auuc: number;
+  qini_coefficient: number;
+  normalized_qini: number;
+  sample_size_train: number;
+  sample_size_test: number;
+  treated_proportion: number;
+  control_proportion: number;
+}
+
+export interface UpliftStrategyComparison {
+  strategy_id: string;
+  strategy_name: string;
+  description: string;
+  targeted_percentage: number;
+  expected_conversion_rate: number;
+  relative_lift_vs_baseline: number;
+  modeled_incentive_cost: number;
+}
+
+export interface UpliftEvaluationResponse {
+  dataset_name: string;
+  dataset_provenance: string;
+  features_used: string[];
+  outcome_evaluated: string;
+  treatment_column: string;
+  train_samples: number;
+  test_samples: number;
+  models: Record<string, UpliftModelMetrics>;
+  decile_breakdown: UpliftDecileMetric[];
+  strategy_comparison: UpliftStrategyComparison[];
+  methodology_disclaimer: string;
+  real_dataset_status: string;
+}
+
 

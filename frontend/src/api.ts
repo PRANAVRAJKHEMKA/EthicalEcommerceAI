@@ -20,6 +20,8 @@ import {
   OrderDetail,
   CreateOrderRequest,
   DemoPersona,
+  FunnelMetricsResponse,
+  UpliftEvaluationResponse,
 } from './types.ts';
 
 // Configurable API base url supporting environment override or relative URL for unified deployment
@@ -437,6 +439,55 @@ export async function createSimulatedOrder(req: CreateOrderRequest): Promise<Ord
     } catch {
       // fallback
     }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function fetchFunnelAnalytics(timeWindowHours: number = 24): Promise<FunnelMetricsResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/analytics/funnel?time_window_hours=${timeWindowHours}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch funnel analytics (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchUpliftEvaluation(outcome: string = 'conversion', datasetPath?: string): Promise<UpliftEvaluationResponse> {
+  let url = `${API_BASE}/api/v1/uplift/evaluation?outcome=${encodeURIComponent(outcome)}`;
+  if (datasetPath) {
+    url += `&dataset_path=${encodeURIComponent(datasetPath)}`;
+  }
+  const res = await fetch(url, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Failed to fetch uplift evaluation (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function triggerUpliftEvaluation(outcome: string = 'conversion', datasetPath?: string): Promise<UpliftEvaluationResponse> {
+  let url = `${API_BASE}/api/v1/uplift/evaluate?outcome=${encodeURIComponent(outcome)}`;
+  if (datasetPath) {
+    url += `&dataset_path=${encodeURIComponent(datasetPath)}`;
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Uplift evaluation failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {}
     throw new Error(msg);
   }
   return res.json();

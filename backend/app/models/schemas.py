@@ -414,3 +414,93 @@ class CreateOrderRequest(BaseModel):
     items: list[dict]
     applied_discounts: dict[str, float] = Field(default_factory=dict)
 
+
+class FunnelStageMetrics(BaseModel):
+    """Counts for key stages of the first-party commerce funnel."""
+    product_views: int = 0
+    searches_submitted: int = 0
+    recommendation_impressions: int = 0
+    recommendation_clicks: int = 0
+    cart_adds: int = 0
+    cart_removes: int = 0
+    offer_exposures: int = 0
+    offer_acceptances: int = 0
+    offer_rejections: int = 0
+    checkouts_started: int = 0
+    demo_orders_completed: int = 0
+    actual_orders_completed: int = 0
+
+
+class FunnelConversionRates(BaseModel):
+    """Conversion and engagement rates derived from first-party event ledger."""
+    recommendation_ctr: float = 0.0
+    offer_acceptance_rate: float = 0.0
+    checkout_completion_rate: float = 0.0
+    view_to_order_rate: float = 0.0
+
+
+class FunnelMetricsResponse(BaseModel):
+    """Aggregated outcome ledger response for the Merchant Console."""
+    time_window_hours: int = 24
+    total_events: int = 0
+    funnel_stages: FunnelStageMetrics
+    conversion_rates: FunnelConversionRates
+    provenance_breakdown: dict[str, int] = Field(default_factory=dict)
+    storefront_breakdown: dict[str, int] = Field(default_factory=dict)
+    is_small_sample: bool = True
+    tracking_completeness: str = "partial_early_stage"
+    methodology_disclaimer: str
+    recent_events: list[dict] = Field(default_factory=list)
+
+
+class UpliftDecileMetric(BaseModel):
+    """Decile-level incremental conversion and uplift metrics."""
+    decile: int
+    treated_count: int
+    control_count: int
+    treated_conversions: int
+    control_conversions: int
+    treated_conversion_rate: float
+    control_conversion_rate: float
+    incremental_uplift: float
+    cumulative_qini: float
+
+
+class UpliftModelMetrics(BaseModel):
+    """Evaluation summary metrics for a candidate uplift model."""
+    model_name: str
+    auuc: float
+    qini_coefficient: float
+    normalized_qini: float
+    sample_size_train: int
+    sample_size_test: int
+    treated_proportion: float
+    control_proportion: float
+
+
+class UpliftStrategyComparison(BaseModel):
+    """Comparative outcomes across three targeting strategies."""
+    strategy_id: str
+    strategy_name: str
+    description: str
+    targeted_percentage: float
+    expected_conversion_rate: float
+    relative_lift_vs_baseline: float
+    modeled_incentive_cost: float
+
+
+class UpliftEvaluationResponse(BaseModel):
+    """Response payload for offline uplift evaluation lab."""
+    dataset_name: str
+    dataset_provenance: str
+    features_used: list[str]
+    outcome_evaluated: str
+    treatment_column: str
+    train_samples: int
+    test_samples: int
+    models: dict[str, UpliftModelMetrics]
+    decile_breakdown: list[UpliftDecileMetric]
+    strategy_comparison: list[UpliftStrategyComparison]
+    methodology_disclaimer: str
+    real_dataset_status: str
+

@@ -38,8 +38,11 @@ from backend.app.models.schemas import (
     SimulationRequest,
     SimulationResponse,
     UserProfile,
+    FunnelMetricsResponse,
+    UpliftEvaluationResponse,
 )
 from backend.app.engine.simulator import EconomicSimulator
+from backend.app.engine.uplift import run_uplift_evaluation, UpliftDatasetSchemaError
 from backend.app.auth import (
     ALLOWED_DEMO_PERSONAS,
     attach_session_cookie,
@@ -675,26 +678,41 @@ ALLOWED_EVENT_TYPES = {
     "search_submitted",
     "add_to_cart",
     "cart_item_added",
+    "cart_add",
     "remove_from_cart",
     "cart_item_removed",
+    "cart_remove",
     "cart_saved",
     "save_cart",
+    "recommendation_impression",
     "recommendation_shown",
+    "recommendation_click",
     "recommendation_accepted",
+    "offer_exposure",
     "offer_shown",
+    "offer_accepted",
+    "offer_rejected",
+    "checkout_started",
+    "demo_order_completed",
+    "simulated_purchase_completed",
+    "order_completed",
+    "order_cancelled",
     "context_selected",
     "page_view",
     "navigation_changed",
-    "simulated_purchase_completed",
-    "order_completed",
 }
 
 EVENT_TYPE_NORMALIZATION = {
     "product_viewed": "product_view",
     "cart_item_added": "add_to_cart",
+    "cart_add": "add_to_cart",
     "cart_item_removed": "remove_from_cart",
+    "cart_remove": "remove_from_cart",
     "save_cart": "cart_saved",
-    "order_completed": "simulated_purchase_completed",
+    "recommendation_shown": "recommendation_impression",
+    "recommendation_accepted": "recommendation_click",
+    "offer_shown": "offer_exposure",
+    "simulated_purchase_completed": "demo_order_completed",
 }
 
 @app.post("/api/v1/events", tags=["Session Events"])
@@ -739,6 +757,54 @@ def delete_events(session_id: str):
         return {"status": "deleted", "events_cleared": deleted}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear session events: {str(e)}")
+
+@app.get("/api/v1/analytics/funnel", response_model=FunnelMetricsResponse, tags=["First-Party Analytics"])
+def get_funnel_analytics(
+    time_window_hours: int = 24,
+    provenance: str | None = None,
+    storefront_id: str | None = None,
+) -> FunnelMetricsResponse:
+    """Aggregates first-party interaction events into commerce funnel stages and conversion metrics.
+
+    Provides merchant visibility into recommendation impressions, offer acceptance, and demo checkout completions.
+    """
+    try:
+        repo = CatalogRepository()
+        metrics = repo.get_outcome_funnel_metrics(
+            time_window_hours=time_window_hours,
+            provenance_filter=provenance,
+            storefront_filter=storefront_id,
+        )
+        return FunnelMetricsResponse(**metrics)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to aggregate funnel metrics: {str(e)}")
+
+@app.get("/api/v1/uplift/evaluation", response_model=UpliftEvaluationResponse, tags=["Uplift Modeling"])
+def get_uplift_evaluation(
+    outcome: str = "conversion",
+    dataset_path: str | None = None,
+) -> UpliftEvaluationResponse:
+    """Evaluates offline causal uplift modeling across Two-Model T-Learner, Propensity, and Random baselines.
+
+    Uses Criteo Uplift Benchmark schema. Bounded to offline research; does not alter synchronous live pricing.
+    """
+    try:
+        eval_results = run_uplift_evaluation(dataset_path=dataset_path, outcome_col=outcome)
+        return UpliftEvaluationResponse(**eval_results)
+    except UpliftDatasetSchemaError as e:
+        raise HTTPException(status_code=400, detail=f"Dataset schema assumption violation: {str(e)}")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"Dataset not found: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Uplift evaluation failed: {str(e)}")
+
+@app.post("/api/v1/uplift/evaluate", response_model=UpliftEvaluationResponse, tags=["Uplift Modeling"])
+def trigger_uplift_evaluation(
+    outcome: str = "conversion",
+    dataset_path: str | None = None,
+) -> UpliftEvaluationResponse:
+    """Triggers on-demand offline uplift evaluation with optional dataset path."""
+    return get_uplift_evaluation(outcome=outcome, dataset_path=dataset_path)
 
 @app.get("/", tags=["Root"])
 def root_status(request: Request):

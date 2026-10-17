@@ -1,0 +1,2 @@
+# Directory for external or benchmark uplift datasets (e.g., Criteo Uplift benchmark subsamples)
+# Note: Full-scale external datasets should not be committed to Git.

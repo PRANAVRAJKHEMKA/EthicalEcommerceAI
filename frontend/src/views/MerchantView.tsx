@@ -36,6 +36,7 @@ import {
   DEFAULT_DEMO_POLICY,
 } from '../api.ts';
 import { MerchantDealPassportInspector } from '../components/MerchantDealPassportInspector.tsx';
+import { TransactionOutcomeLedger } from '../components/TransactionOutcomeLedger.tsx';
 
 interface MerchantViewProps {
   products: Product[];
@@ -566,6 +567,11 @@ export function MerchantView({ products, health, sessionPolicy, onPolicyChange }
         marginFloor={settings.margin_floor}
         discountCap={settings.discount_cap}
       />
+
+      {/* ========================================================================= */}
+      {/* STEP 5.19: TRANSACTION OUTCOME INTELLIGENCE & CAUSAL UPLIFT LAB */}
+      {/* ========================================================================= */}
+      <TransactionOutcomeLedger />
 
       {/* ========================================================================= */}
       {/* MILESTONE 5: THREE-POLICY ECONOMIC SIMULATION COMPARATOR */}

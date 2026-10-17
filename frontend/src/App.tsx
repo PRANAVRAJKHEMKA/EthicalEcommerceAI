@@ -425,6 +425,31 @@ export default function App() {
         if (isMounted && currentRequestId === decisionRequestIdRef.current) {
           setDecision(data);
           setIsDecisionLoading(false);
+
+          // Track recommendation impressions and offer exposures for surfaced candidates
+          if (data?.recommendations && data.recommendations.length > 0) {
+            data.recommendations.forEach((rec) => {
+              recordSessionEvent({
+                session_id: sessionId,
+                event_type: 'recommendation_impression',
+                product_id: rec.product_id,
+                shopping_context: shoppingContext,
+              }).catch(() => {});
+
+              if (rec.is_offered) {
+                recordSessionEvent({
+                  session_id: sessionId,
+                  event_type: 'offer_exposure',
+                  product_id: rec.product_id,
+                  shopping_context: shoppingContext,
+                  metadata: {
+                    discount_percentage: rec.discount_percentage,
+                    final_price: rec.final_price,
+                  },
+                }).catch(() => {});
+              }
+            });
+          }
         }
       })
       .catch((err) => {
@@ -640,12 +665,28 @@ export default function App() {
 
   // Handle accepting a complementary recommendation
   const handleAcceptRecommendation = (rec: RecommendationItem) => {
+    // Record recommendation click
     recordSessionEvent({
       session_id: sessionId,
-      event_type: 'recommendation_accepted',
+      event_type: 'recommendation_click',
       product_id: rec.product_id,
       shopping_context: shoppingContext,
     }).catch(() => {});
+
+    // If an explicit incentive was offered, record offer acceptance separately
+    if (rec.is_offered && rec.discount_percentage > 0) {
+      recordSessionEvent({
+        session_id: sessionId,
+        event_type: 'offer_accepted',
+        product_id: rec.product_id,
+        shopping_context: shoppingContext,
+        metadata: {
+          discount_percentage: rec.discount_percentage,
+          final_price: rec.final_price,
+          savings: rec.savings,
+        },
+      }).catch(() => {});
+    }
 
     const productObj = products.find((p) => p.id === rec.product_id) || {
       id: rec.product_id,
@@ -670,6 +711,15 @@ export default function App() {
 
   const handleDismissRecommendation = (productId: string) => {
     setDismissedIds((prev) => new Set([...prev, productId]));
+    const rec = decision?.recommendations.find((r) => r.product_id === productId);
+    if (rec?.is_offered) {
+      recordSessionEvent({
+        session_id: sessionId,
+        event_type: 'offer_rejected',
+        product_id: productId,
+        shopping_context: shoppingContext,
+      }).catch(() => {});
+    }
   };
 
   const handleOpenPassport = useCallback(
@@ -731,6 +781,22 @@ export default function App() {
         discountPct > 0
           ? `Fair Deal Passport approved bundle (${(discountPct * 100).toFixed(0)}% off)`
           : undefined;
+
+      if (discountPct > 0) {
+        recordSessionEvent({
+          session_id: sessionId,
+          event_type: 'offer_accepted',
+          product_id: productId,
+          shopping_context: shoppingContext,
+          metadata: {
+            discount_percentage: discountPct,
+            final_price: price,
+            provenance: 'observed_demo',
+            source: 'deal_passport',
+          },
+        }).catch(() => {});
+      }
+
       handleAddToCart(productObj, price, discountPct, cond);
     }
     setIsPassportOpen(false);
@@ -828,6 +894,12 @@ export default function App() {
         onRemoveItem={handleRemoveItem}
         onClearCart={handleClearCart}
         onOpenCheckout={() => {
+          recordSessionEvent({
+            session_id: sessionId,
+            event_type: 'checkout_started',
+            shopping_context: shoppingContext,
+            metadata: { cart_items_count: cart.length },
+          }).catch(() => {});
           setIsCartOpen(false);
           setIsCheckoutOpen(true);
         }}

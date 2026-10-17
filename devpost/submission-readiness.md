@@ -87,6 +87,15 @@ To ensure absolute integrity and compliance with hackathon evaluation standards:
 | **Generative AI** | Dual-mode explanation service integrating Google Gemini 2.5 Flash with sub-5ms deterministic offline fallback. | Gemini generates natural language copy; it is strictly prohibited from altering prices, discounts, or margins. | We do NOT claim Gemini computes pricing. Gemini is decoupled from the transaction path. |
 | **Economic Simulator** | Full 3-policy Monte Carlo simulation comparator (No Discount vs. Blanket 15% vs. FairCart AI) using Common Random Numbers (CRN). | Evaluates 1,000 synthetic shopping sessions per run across 5 shopper archetypes. | We do NOT claim simulator results represent real-world market outcomes. |
 | **Authentication & Orders** | Argon2id password hashing, server-validated sessions, HttpOnly cookies, cross-account order isolation, simulated checkout. | Seeded with 5 synthetic personas and 15 itemized demonstration past orders. | No real customer payment processing (zero Stripe/financial processing). |
+| **First-Party Outcome Ledger** | Real-time event tracking across 12 commerce stages, idempotency deduplication, and provenance breakdown. | Observed from interactive user sessions in local demo sandbox. | No fake purchases; demo orders are strictly labelled as simulated. |
+| **Offline Uplift Lab** | Two-Model T-Learner, empirical Qini curves, AUUC, and 3-strategy counterfactual comparison. | Evaluated on 1,000-sample synthetic mechanics fixture adhering to Criteo benchmark schema. | Public ad datasets lack wholesale COGS; causal uplift does not directly set storefront prices. |
+
+### 4.1 Future Architecture Roadmap (Preserved for Later Milestones)
+1. **Multi-Store Profit Intelligence:** Validated merchant analytics, multi-store comparison, and CSV sales/margin imports.
+2. **Concurrent Inventory-Aware Optimization:** Real-time stock reservation and dynamic scarcity bounding across concurrent sessions.
+3. **Demand & Sell-Through Forecasting:** Predictive replenishment modeling based on aggregated basket co-occurrence and seasonality.
+4. **Expanded Shopper-Intent Intelligence:** First-party behavioral session signals and voluntarily shared consumer preferences.
+5. **Authorized Advertising Integrations:** Google Analytics and Meta Business Conversions API integrations with explicit shopper consent.
 
 ---
 

@@ -285,14 +285,20 @@ class CatalogRepository:
         event_id: str | None = None,
         timestamp: str | None = None,
     ) -> str:
-        """Records an anonymous session event with zero PII and idempotency."""
+        """Records an anonymous session event with zero PII, deduplication, and decision provenance."""
         import json
         import uuid
         from datetime import datetime, timezone
 
         final_id = event_id.strip() if event_id and event_id.strip() else f"evt-{uuid.uuid4().hex[:12]}"
         final_ts = timestamp.strip() if timestamp and timestamp.strip() else datetime.now(timezone.utc).isoformat()
-        meta_str = json.dumps(metadata or {})
+
+        enriched_meta = dict(metadata or {})
+        if "provenance" not in enriched_meta:
+            enriched_meta["provenance"] = "observed_demo"
+        if "storefront_id" not in enriched_meta:
+            enriched_meta["storefront_id"] = "storefront_default"
+        meta_str = json.dumps(enriched_meta)
 
         conn = self._get_connection()
         try:
@@ -303,6 +309,166 @@ class CatalogRepository:
             """, (final_id, session_id, event_type, product_id, shopping_context, meta_str, final_ts))
             conn.commit()
             return final_id
+        finally:
+            conn.close()
+
+    def get_outcome_funnel_metrics(
+        self,
+        time_window_hours: int = 24,
+        provenance_filter: str | None = None,
+        storefront_filter: str | None = None,
+    ) -> dict:
+        """Aggregates first-party interaction events into commerce funnel stages and conversion metrics.
+
+        Distinguishes demo orders from live actual orders, tallies provenance, and computes rates.
+        """
+        import json
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        since_ts = (now - timedelta(hours=time_window_hours)).isoformat()
+
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            # Query recent events
+            cursor.execute("""
+                SELECT id, session_id, event_type, product_id, shopping_context, metadata_json, timestamp
+                FROM session_events
+                WHERE timestamp >= ?
+                ORDER BY timestamp DESC
+                LIMIT 5000;
+            """, (since_ts,))
+            rows = cursor.fetchall()
+
+            # Fallback to recent events if none within time window
+            if not rows:
+                cursor.execute("""
+                    SELECT id, session_id, event_type, product_id, shopping_context, metadata_json, timestamp
+                    FROM session_events
+                    ORDER BY timestamp DESC
+                    LIMIT 500;
+                """)
+                rows = cursor.fetchall()
+
+            views = 0
+            searches = 0
+            rec_impressions = 0
+            rec_clicks = 0
+            cart_adds = 0
+            cart_removes = 0
+            offer_exposures = 0
+            offer_acceptances = 0
+            offer_rejections = 0
+            checkouts_started = 0
+            demo_orders = 0
+            actual_orders = 0
+
+            provenance_counts: dict[str, int] = {}
+            storefront_counts: dict[str, int] = {}
+            recent_events: list[dict] = []
+
+            for r in rows:
+                etype = r["event_type"]
+                meta = {}
+                if r["metadata_json"]:
+                    try:
+                        meta = json.loads(r["metadata_json"])
+                    except Exception:
+                        pass
+
+                prov = meta.get("provenance", "observed_demo")
+                sfront = meta.get("storefront_id", "storefront_default")
+
+                if provenance_filter and prov != provenance_filter:
+                    continue
+                if storefront_filter and sfront != storefront_filter:
+                    continue
+
+                provenance_counts[prov] = provenance_counts.get(prov, 0) + 1
+                storefront_counts[sfront] = storefront_counts.get(sfront, 0) + 1
+
+                # Classify into funnel stage
+                if etype in ("product_view", "product_viewed", "product_focus"):
+                    views += 1
+                elif etype in ("search_submitted",):
+                    searches += 1
+                elif etype in ("recommendation_impression", "recommendation_shown"):
+                    rec_impressions += 1
+                elif etype in ("recommendation_click", "recommendation_accepted"):
+                    rec_clicks += 1
+                elif etype in ("add_to_cart", "cart_item_added", "cart_add"):
+                    cart_adds += 1
+                elif etype in ("remove_from_cart", "cart_item_removed", "cart_remove"):
+                    cart_removes += 1
+                elif etype in ("offer_exposure", "offer_shown"):
+                    offer_exposures += 1
+                elif etype in ("offer_accepted",):
+                    offer_acceptances += 1
+                elif etype in ("offer_rejected",):
+                    offer_rejections += 1
+                elif etype in ("checkout_started",):
+                    checkouts_started += 1
+                elif etype in ("demo_order_completed", "simulated_purchase_completed"):
+                    demo_orders += 1
+                elif etype in ("order_completed",):
+                    actual_orders += 1
+
+                if len(recent_events) < 15:
+                    recent_events.append({
+                        "id": r["id"],
+                        "session_id": r["session_id"],
+                        "event_type": etype,
+                        "product_id": r["product_id"],
+                        "shopping_context": r["shopping_context"],
+                        "provenance": prov,
+                        "storefront_id": sfront,
+                        "timestamp": r["timestamp"],
+                    })
+
+            total_evts = sum(provenance_counts.values())
+            rec_ctr = min(1.0, round(rec_clicks / rec_impressions, 4)) if rec_impressions > 0 else 0.0
+            offer_acc_rate = min(1.0, round(offer_acceptances / offer_exposures, 4)) if offer_exposures > 0 else 0.0
+            chk_complete_rate = min(1.0, round((demo_orders + actual_orders) / checkouts_started, 4)) if checkouts_started > 0 else 0.0
+            view_to_order = min(1.0, round((demo_orders + actual_orders) / views, 4)) if views > 0 else 0.0
+
+            is_small = total_evts < 30
+            tracking_full = views > 0 and rec_impressions > 0 and cart_adds > 0 and demo_orders > 0
+
+            return {
+                "time_window_hours": time_window_hours,
+                "total_events": total_evts,
+                "funnel_stages": {
+                    "product_views": views,
+                    "searches_submitted": searches,
+                    "recommendation_impressions": rec_impressions,
+                    "recommendation_clicks": rec_clicks,
+                    "cart_adds": cart_adds,
+                    "cart_removes": cart_removes,
+                    "offer_exposures": offer_exposures,
+                    "offer_acceptances": offer_acceptances,
+                    "offer_rejections": offer_rejections,
+                    "checkouts_started": checkouts_started,
+                    "demo_orders_completed": demo_orders,
+                    "actual_orders_completed": actual_orders,
+                },
+                "conversion_rates": {
+                    "recommendation_ctr": rec_ctr,
+                    "offer_acceptance_rate": offer_acc_rate,
+                    "checkout_completion_rate": chk_complete_rate,
+                    "view_to_order_rate": view_to_order,
+                },
+                "provenance_breakdown": provenance_counts,
+                "storefront_breakdown": storefront_counts,
+                "is_small_sample": is_small,
+                "tracking_completeness": "full" if tracking_full else "partial_early_stage",
+                "methodology_disclaimer": (
+                    "First-party outcome ledger tracks observed events within the demo storefront. "
+                    "Demo orders represent interactive customer simulation in a sandbox environment, "
+                    "strictly distinguished from paid live transactions. Zero personal data (PII) is stored."
+                ),
+                "recent_events": recent_events,
+            }
         finally:
             conn.close()
 
@@ -377,7 +543,7 @@ class CatalogRepository:
             cursor.execute("""
                 SELECT DISTINCT product_id
                 FROM session_events
-                WHERE session_id = ? AND product_id != '' AND event_type = 'simulated_purchase_completed'
+                WHERE session_id = ? AND product_id != '' AND event_type IN ('simulated_purchase_completed', 'demo_order_completed')
                 ORDER BY timestamp DESC
                 LIMIT 20;
             """, (session_id,))
