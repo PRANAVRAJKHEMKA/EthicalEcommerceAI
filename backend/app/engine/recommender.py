@@ -59,9 +59,16 @@ class RecommendationCandidate:
 CONTEXT_KEYWORDS: dict[str, set[str]] = {
     "productivity": {"productivity", "ergonomic", "stand", "hub", "wireless", "organizer", "light", "screenbar"},
     "gaming": {"gaming", "mechanical", "custom", "rgb", "coiled", "bungee", "fast", "audio", "boom"},
-    "study": {"study", "remote", "webcam", "microphone", "focus", "cooling", "pad", "compact", "audio"},
+    "study": {"study", "remote", "webcam", "microphone", "focus", "cooling", "pad", "compact", "audio", "journal", "notes"},
     "travel": {"travel", "portable", "compact", "gan", "charger", "cable", "sleeve", "wireless", "pouch"},
-    "wellness": {"wellness", "ergonomic", "wrist-rest", "cushion", "lumbar", "stand", "comfort", "support"},
+    "wellness": {"wellness", "ergonomic", "wrist-rest", "cushion", "lumbar", "stand", "comfort", "support", "relief"},
+    "pantry": {"pantry", "grocery", "pasta", "cooking", "sauce", "oil", "culinary", "staple", "snack", "ingredients"},
+    "kitchen": {"kitchen", "cookware", "utensils", "prep", "cutting", "culinary", "baking", "skillet", "chef", "dining"},
+    "food_storage": {"storage", "prep", "organization", "container", "airtight", "reusable", "silicone", "pantry", "bento"},
+    "home_care": {"cleaning", "clean", "care", "home", "scrub", "eco", "soap", "spray", "cloth", "laundry"},
+    "personal_care": {"personal-care", "wellness", "self-care", "skincare", "moisturizer", "relief", "soak", "relax"},
+    "home_office": {"home-office", "workspace", "ergonomic", "desk", "cable", "monitor", "stand", "lighting", "organization"},
+    "electronics": {"electronics", "gadgets", "usb", "adapter", "charging", "wireless", "power", "peripherals"},
 }
 
 # Category affinity matrix reflecting workstation synergy
@@ -82,6 +89,25 @@ CATEGORY_AFFINITY_MATRIX: dict[tuple[str, str], float] = {
     ("Power & Cables", "Accessories"): 0.25,
     ("Lifestyle", "Accessories"): 0.20,
     ("Lifestyle", "Workspace"): 0.20,
+    # Cross-category affinities for expanded catalogue domains
+    ("Grocery & Pantry", "Kitchen & Dining"): 0.35,
+    ("Grocery & Pantry", "Food Storage & Organization"): 0.35,
+    ("Kitchen & Dining", "Food Storage & Organization"): 0.40,
+    ("Kitchen & Dining", "Home & Cleaning"): 0.30,
+    ("Food Storage & Organization", "Home & Cleaning"): 0.25,
+    ("Personal Care", "Lifestyle"): 0.30,
+    ("Personal Care", "Home & Cleaning"): 0.20,
+    ("Personal Care", "Wellness"): 0.35,
+    ("Stationery & Study", "Home Office"): 0.35,
+    ("Stationery & Study", "Accessories"): 0.25,
+    ("Home Office", "Accessories"): 0.35,
+    ("Home Office", "Workspace"): 0.35,
+    ("Home Office", "Power & Cables"): 0.30,
+    ("Electronics & Gadgets", "Power & Cables"): 0.40,
+    ("Electronics & Gadgets", "Accessories"): 0.35,
+    ("Electronics & Gadgets", "Workspace"): 0.30,
+    ("Electronics & Gadgets", "Keyboards"): 0.25,
+    ("Electronics & Gadgets", "Mice"): 0.25,
 }
 
 # -----------------------------------------------------------------------------
@@ -105,6 +131,21 @@ CATALOG_POPULARITY: dict[str, float] = {
     "item-024": 0.74,  # Active Noise-Canceling Wireless Headphones
     "item-026": 0.65,  # Double-Shot PBT Backlit Keycaps
     "item-030": 0.71,  # Ergonomic Under-Desk Footrest
+    "item-033": 0.82,  # Artisanal Bronze-Cut Rigatoni Pasta
+    "item-034": 0.80,  # Slow-Simmered San Marzano Marinara
+    "item-035": 0.84,  # First Cold-Pressed Extra Virgin Olive Oil
+    "item-041": 0.81,  # Hardcover Dotted Grid Notebook Journal
+    "item-049": 0.83,  # Hard-Anodized Nonstick 10-inch Skillet
+    "item-050": 0.82,  # Heat-Resistant Silicone Cooking Utensils
+    "item-051": 0.80,  # Organic Moso Bamboo Cutting Board
+    "item-057": 0.85,  # High-Borosilicate Glass Meal Prep Containers
+    "item-058": 0.81,  # Platinum Silicone Reusable Food Bags
+    "item-065": 0.82,  # Plant-Based Multi-Surface Cleaning Spray
+    "item-066": 0.80,  # Ultra-Fine Lint-Free Microfiber Cleaning Cloths
+    "item-073": 0.80,  # Hydrating Shea Butter & Ceramide Hand Cream
+    "item-075": 0.79,  # Lubricating Screen-Relief Hydro Gel Eye Drops
+    "item-081": 0.83,  # Steel Under-Desk Cable Management Mesh Tray
+    "item-089": 0.84,  # Magnetic Qi2 3-in-1 Fast Wireless Charging Stand
 }
 
 def calculate_anchor_complementarity_score(
@@ -148,8 +189,11 @@ def calculate_anchor_complementarity_score(
         eff_w = anchor.weight * decay * rep_guard
         weight_sum += eff_w
 
-        if candidate.id in parent.complementary_ids or parent.id in candidate.complementary_ids:
+        if candidate.id in parent.complementary_ids:
             accum += eff_w * 1.00
+            matching_parents += 1
+        elif parent.id in candidate.complementary_ids:
+            accum += eff_w * 0.85
             matching_parents += 1
         elif candidate.subcategory == parent.subcategory or set(candidate.tags).intersection(parent.tags):
             accum += eff_w * 0.60
@@ -523,6 +567,22 @@ def build_factual_recommendation_reason(
         base = f"Expand ports with high-speed data passthrough for {primary_name}." if parents else "Expands workstation ports with high-speed 100W PD data and display passthrough."
     elif "bungee" in name_lower or sub in ("Gaming Accessories", "Mouse Accessories"):
         base = f"Anti-drag bungee suspends mouse cord to eliminate friction during rapid tracking with {primary_name}." if parents else "Anti-drag bungee suspends mouse cord to eliminate cable friction."
+    elif "pasta" in name_lower or "marinara" in name_lower or "oil" in name_lower or "cheese" in name_lower or "parmigiano" in name_lower or "oats" in name_lower or "honey" in name_lower or "coffee" in name_lower or "walnut" in name_lower or sub in ("Pantry Staples", "Sauces & Condiments", "Breakfast & Grains", "Specialty Food"):
+        base = f"Artisanal culinary staple pairing seamlessly with ingredients and tools used for {primary_name}." if parents else "Artisanal kitchen pantry essential for handcrafted home meals."
+    elif "skillet" in name_lower or "knife" in name_lower or "utensil" in name_lower or "board" in name_lower or sub in ("Cookware", "Kitchen Tools", "Prep & Cutlery", "Bake & Prep"):
+        base = f"Essential culinary tool facilitating seamless cooking and food prep alongside {primary_name}." if parents else "Durable, non-toxic culinary tool engineered for precision home cooking."
+    elif "container" in name_lower or "bag" in name_lower or "jar" in name_lower or sub in ("Containers", "Pantry Organization", "Food Preservation"):
+        base = f"Airtight food-safe storage preserving fresh ingredients alongside {primary_name}." if parents else "Modular airtight storage keeping pantry and meal prep fresh."
+    elif "cleaner" in name_lower or "cloth" in name_lower or "soap" in name_lower or "brush" in name_lower or sub in ("Surface Cleaners", "Kitchen Cleaning", "Eco Laundry", "Household"):
+        base = f"Eco-friendly non-toxic cleaner maintaining pristine hygiene for {primary_name}." if parents else "Plant-derived, non-toxic cleaning solution for conscious households."
+    elif "cream" in name_lower or "balm" in name_lower or "drop" in name_lower or sub in ("Hand & Body", "Eye & Facial", "Bath & Body", "Skincare Tools"):
+        base = f"Revitalizing self-care formula relieving desk fatigue alongside {primary_name}." if parents else "Nourishing, dermatologically formulated daily care essential."
+    elif "journal" in name_lower or "pen" in name_lower or "note" in name_lower or sub in ("Notebooks & Journals", "Writing Instruments", "Study Accessories"):
+        base = f"Bleed-proof stationery companion keeping ideas structured alongside {primary_name}." if parents else "Premium stationery crafted for daily journaling and structured note-taking."
+    elif "tray" in name_lower or "monitor arm" in name_lower or sub in ("Cable Management", "Monitor Mounts", "Ergonomic Seating", "Desk Accessories"):
+        base = f"Workstation organizer streamlining ergonomics and desk routes with {primary_name}." if parents else "Heavy-duty ergonomic organizer optimizing desktop efficiency."
+    elif "charger" in name_lower or "trackpad" in name_lower or sub in ("Wireless Charging", "Connectivity", "Peripherals"):
+        base = f"Modern tech accessory expanding connectivity and power alongside {primary_name}." if parents else "High-performance tech accessory for streamlined connectivity."
     else:
         base = f"Factual complementary accessory matching {candidate.category} with {parent_phrase}." if parents else f"Versatile {candidate.category} accessory selected for multi-setup compatibility."
 
@@ -537,6 +597,20 @@ def build_factual_recommendation_reason(
         context_note = " (Compact and optimized for Travel)"
     elif ctx == "wellness":
         context_note = " (Supports your Ergonomics & Wellness focus)"
+    elif ctx == "pantry":
+        context_note = " (Curated for your Pantry & Culinary needs)"
+    elif ctx == "kitchen":
+        context_note = " (Essential Cookware & Dining companion)"
+    elif ctx == "food_storage":
+        context_note = " (Optimized for Food Prep & Storage)"
+    elif ctx == "home_care":
+        context_note = " (Natural companion for Eco-Friendly Home Care)"
+    elif ctx == "personal_care":
+        context_note = " (Mindful Self-Care & Daily Wellness ritual)"
+    elif ctx == "home_office":
+        context_note = " (Designed for your Home Office layout)"
+    elif ctx == "electronics":
+        context_note = " (High-performance Gadget & Power setup)"
     else:
         context_note = ""
 
@@ -713,9 +787,9 @@ class RecommenderEngine:
 
         eligible_candidates = [
             catalog_by_id[cid]
-            for cid in candidate_pool_ids
+            for cid in sorted(candidate_pool_ids)
             if cid in catalog_by_id and catalog_by_id[cid].inventory > 0 and cid not in cart_id_set
-        ][:30]
+        ]
 
         # ---------------------------------------------------------------------
         # STAGE 3: Multi-Signal Feature Extraction & Scoring

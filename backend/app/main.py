@@ -18,12 +18,14 @@ from backend.app.engine.associations import get_association_engine
 from backend.app.models.schemas import (
     BasketQuote,
     CreateOrderRequest,
+    DealPassportRequest,
     DecisionRequest,
     DecisionResponse,
     DemoLoginRequest,
     DemoPersonaPublic,
     ExplanationRequest,
     ExplanationResponse,
+    FairDealPassport,
     HealthResponse,
     LoginRequest,
     LoginResponse,
@@ -164,7 +166,7 @@ def on_startup():
     init_db()
     try:
         repo = CatalogRepository()
-        if repo.count_products() < 32:
+        if repo.count_products() < 96:
             from backend.scripts.seed_catalog import seed_catalog
             seed_catalog()
         if repo.count_users() < 5:
@@ -549,6 +551,19 @@ def calculate_quote(request: QuoteRequest) -> BasketQuote:
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Basket quote calculation failed: {str(e)}")
+
+@app.post("/api/v1/deal-passport", response_model=FairDealPassport, tags=["Decision Engine"])
+def create_deal_passport(request: DealPassportRequest) -> FairDealPassport:
+    """Generates an inspectable Fair Deal Passport evaluating three counterfactual scenarios
+    (No discount, FairCart approved offer, and an aggressive alternative) for the exact same cart snapshot.
+    """
+    try:
+        orchestrator = DecisionOrchestrator()
+        return orchestrator.generate_deal_passport(request)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Deal Passport generation failed: {str(e)}")
 
 @app.post("/api/v1/explanation", response_model=ExplanationResponse, tags=["AI Explanation"])
 async def explain_recommendations(request: ExplanationRequest) -> ExplanationResponse:

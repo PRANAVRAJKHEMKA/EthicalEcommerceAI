@@ -5,6 +5,8 @@ import {
   DecisionResponse,
   QuoteRequest,
   BasketQuote,
+  DealPassportRequest,
+  FairDealPassport,
   ExplanationRequest,
   ExplanationResponse,
   MerchantSettings,
@@ -94,6 +96,21 @@ export async function fetchQuote(req: QuoteRequest): Promise<BasketQuote> {
   });
   if (!res.ok) {
     throw new Error(`Basket quote request failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchDealPassport(req: DealPassportRequest, signal?: AbortSignal): Promise<FairDealPassport> {
+  const res = await fetch(`${API_BASE}/api/v1/deal-passport`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify(req),
+    signal,
+  });
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => '');
+    throw new Error(`Fair Deal Passport request failed (${res.status}): ${errorText}`);
   }
   return res.json();
 }

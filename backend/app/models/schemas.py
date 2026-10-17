@@ -131,6 +131,65 @@ class BasketQuote(BaseModel):
     total_savings: float
     basket_gross_margin: float
 
+class PassportPolicyChecks(BaseModel):
+    """Evaluation outcomes for individual mathematical guardrails."""
+    margin_floor_passed: bool
+    discount_cap_passed: bool
+    bundle_rule_passed: bool
+
+class PassportMerchantMetrics(BaseModel):
+    """Confidential internal merchant economics returned ONLY in merchant view mode."""
+    basket_revenue: float
+    basket_cogs: float
+    gross_profit: float
+    margin_delta_vs_baseline: float
+    status: str
+
+class PassportScenario(BaseModel):
+    """One of three counterfactual scenarios for the exact same cart snapshot."""
+    scenario_id: str  # "no_discount" | "faircart_approved" | "aggressive_alternative"
+    label: str
+    discount_percentage: float
+    candidate_price: float
+    candidate_savings: float
+    basket_subtotal: float
+    basket_savings: float
+    basket_gross_margin: float
+    is_approved: bool
+    rejection_reason: str | None = None
+    policy_checks: PassportPolicyChecks
+    shopper_explanation: str
+    merchant_explanation: str
+    merchant_metrics: PassportMerchantMetrics | None = None
+
+class FairDealPassport(BaseModel):
+    """Fair Deal Passport: Complete counterfactual transparency report for an offer."""
+    passport_id: str
+    cart_snapshot_hash: str
+    generated_at: str
+    candidate_product_id: str
+    candidate_product_name: str
+    candidate_reference_price: float
+    active_margin_floor: float
+    active_discount_cap: float
+    selected_scenario_id: str
+    scenarios: list[PassportScenario]
+    macro_simulation_summary: dict[str, str | float] | None = None
+    explanation_source: str = "deterministic_rules"
+
+class DealPassportRequest(BaseModel):
+    """Request payload for generating a Fair Deal Passport."""
+    cart_items: list[CartItemInput] = Field(default_factory=list)
+    candidate_product_id: str
+    candidate_discount_pct: float | None = None
+    alternative_discount_pct: float | None = None
+    applied_discounts: dict[str, float] = Field(default_factory=dict)
+    margin_floor: float | None = None
+    discount_cap: float | None = None
+    shopping_context: str = "all"
+    session_id: str = "sess-shopper"
+    view_mode: str = "shopper"  # "shopper" or "merchant"
+
 class DecisionResponse(BaseModel):
     """Engine C unified decision response supporting multi-recommendations and authoritative pricing."""
     request_id: str
@@ -146,6 +205,7 @@ class DecisionResponse(BaseModel):
     decision_reason: str = Field(..., description="Audit log explanation detailing gross margin and utility checks")
     basket_gross_margin: float = Field(..., description="Resulting gross margin of the affected basket")
     fallback_applied: bool = False
+    deal_passport: FairDealPassport | None = None
     execution_latency_ms: float
 
 class QuoteRequest(BaseModel):

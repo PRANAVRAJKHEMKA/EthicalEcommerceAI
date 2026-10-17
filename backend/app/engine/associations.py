@@ -31,27 +31,77 @@ CONTEXT_ARCHETYPES: dict[str, list[list[str]]] = {
         ["item-001", "item-002", "item-003", "item-004", "item-013"],
         ["item-001", "item-002", "item-008", "item-025", "item-026"],
         ["item-003", "item-004", "item-011", "item-016", "item-029"],
+        ["item-001", "item-002", "item-003", "item-081", "item-082"],
     ],
     "gaming": [
         ["item-001", "item-004", "item-007", "item-021", "item-022"],
         ["item-005", "item-006", "item-007", "item-022", "item-026"],
         ["item-001", "item-006", "item-014", "item-021", "item-032"],
+        ["item-005", "item-007", "item-022", "item-088", "item-092"],
     ],
     "study": [
         ["item-008", "item-014", "item-015", "item-023", "item-024"],
         ["item-001", "item-002", "item-015", "item-024", "item-028"],
         ["item-003", "item-008", "item-010", "item-023", "item-027"],
+        ["item-041", "item-042", "item-043", "item-047", "item-048"],
+        ["item-041", "item-044", "item-045", "item-046", "item-085"],
     ],
     "travel": [
         ["item-003", "item-017", "item-018", "item-019", "item-020"],
         ["item-010", "item-016", "item-017", "item-019", "item-020"],
         ["item-002", "item-017", "item-018", "item-027", "item-028"],
+        ["item-017", "item-018", "item-090", "item-092", "item-094"],
     ],
     "wellness": [
         ["item-001", "item-002", "item-004", "item-013", "item-030"],
         ["item-002", "item-004", "item-008", "item-013", "item-031"],
         ["item-001", "item-004", "item-013", "item-024", "item-030"],
+        ["item-030", "item-031", "item-084", "item-087", "item-075"],
     ],
+    "pantry": [
+        ["item-033", "item-034", "item-035", "item-036"],
+        ["item-037", "item-038", "item-039", "item-040"],
+        ["item-033", "item-034", "item-035", "item-050"],
+        ["item-033", "item-035", "item-050", "item-054"],
+    ],
+    "kitchen": [
+        ["item-049", "item-050", "item-051", "item-052"],
+        ["item-050", "item-051", "item-053", "item-055"],
+        ["item-049", "item-052", "item-054", "item-056"],
+        ["item-049", "item-050", "item-051", "item-067"],
+    ],
+    "food_storage": [
+        ["item-057", "item-058", "item-059", "item-063"],
+        ["item-058", "item-060", "item-061", "item-064"],
+        ["item-057", "item-059", "item-061", "item-062"],
+        ["item-057", "item-058", "item-033", "item-039"],
+    ],
+    "home_care": [
+        ["item-065", "item-066", "item-067", "item-068"],
+        ["item-066", "item-068", "item-069", "item-071"],
+        ["item-065", "item-067", "item-070", "item-072"],
+        ["item-065", "item-066", "item-051", "item-069"],
+    ],
+    "personal_care": [
+        ["item-073", "item-074", "item-075", "item-078"],
+        ["item-073", "item-076", "item-077", "item-079"],
+        ["item-074", "item-075", "item-078", "item-080"],
+        ["item-073", "item-075", "item-030", "item-031"],
+    ],
+}
+
+# Domain compatibility mapping to enforce discriminative cross-category synergy and prevent unnatural noise
+COMPATIBLE_CONTEXTS: dict[str, list[str]] = {
+    "productivity": ["productivity", "study", "wellness"],
+    "gaming": ["gaming", "productivity"],
+    "study": ["study", "productivity"],
+    "travel": ["travel", "wellness", "productivity"],
+    "wellness": ["wellness", "productivity", "personal_care"],
+    "pantry": ["pantry", "kitchen", "food_storage"],
+    "kitchen": ["kitchen", "pantry", "food_storage", "home_care"],
+    "food_storage": ["food_storage", "kitchen", "pantry", "home_care"],
+    "home_care": ["home_care", "kitchen", "food_storage"],
+    "personal_care": ["personal_care", "wellness"],
 }
 
 ALL_CONTEXTS = list(CONTEXT_ARCHETYPES.keys())
@@ -104,7 +154,7 @@ class AssociationMatch:
     bounded_strength: float
 
 def generate_synthetic_sessions(
-    num_sessions: int = 2000,
+    num_sessions: int = 3000,
     seed: int = 42,
 ) -> list[SyntheticSession]:
     """Generates a reproducible dataset of synthetic sessions and baskets.
@@ -125,9 +175,10 @@ def generate_synthetic_sessions(
         basket_size = rng.randint(2, min(5, len(primary_arch)))
         basket = set(rng.sample(primary_arch, basket_size))
 
-        # 25% chance of cross-pollinating a complementary item from another archetype
+        # 25% chance of cross-pollinating a complementary item from a compatible domain
         if rng.random() < 0.25:
-            other_context = rng.choice(ALL_CONTEXTS)
+            compat_list = COMPATIBLE_CONTEXTS.get(context, [context])
+            other_context = rng.choice(compat_list)
             other_item = rng.choice(rng.choice(CONTEXT_ARCHETYPES[other_context]))
             basket.add(other_item)
 
@@ -198,7 +249,7 @@ class AssociationRuleEngine:
     def __init__(
         self,
         sessions: list[SyntheticSession] | None = None,
-        min_support_pct: float = 0.005,
+        min_support_pct: float = 0.003,
         alpha: float = 1.0,
         seed: int = 42,
     ):
@@ -208,7 +259,7 @@ class AssociationRuleEngine:
 
         # If sessions not provided, generate deterministic training sessions
         if sessions is None:
-            all_sessions = generate_synthetic_sessions(num_sessions=2000, seed=self.seed)
+            all_sessions = generate_synthetic_sessions(num_sessions=3000, seed=self.seed)
             train_sessions, _ = split_sessions(all_sessions, train_ratio=0.8)
             self.sessions = train_sessions
         else:
@@ -224,6 +275,8 @@ class AssociationRuleEngine:
 
     def _mine_apriori(self) -> None:
         """Mines frequent itemsets up to size 4 and rules with antecedent size <= 3."""
+        self.itemset_counts.clear()
+        self.rules_by_antecedent.clear()
         # 1. Mine itemset frequencies for size 1, 2, 3, 4
         baskets = [sorted(list(s.basket)) for s in self.sessions]
 
@@ -406,8 +459,13 @@ class AssociationRuleEngine:
 # Default singleton engine instance mined from training split of synthetic transactions
 _default_engine: AssociationRuleEngine | None = None
 
-def get_association_engine() -> AssociationRuleEngine:
+def reset_association_engine() -> None:
+    """Invalidates and resets the singleton association rule engine instance."""
     global _default_engine
-    if _default_engine is None:
+    _default_engine = None
+
+def get_association_engine(force_recompute: bool = False) -> AssociationRuleEngine:
+    global _default_engine
+    if _default_engine is None or force_recompute:
         _default_engine = AssociationRuleEngine()
     return _default_engine

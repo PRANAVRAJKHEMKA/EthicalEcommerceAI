@@ -1200,3 +1200,109 @@ OK (131/131 tests passing, 0 failures, 0 errors)
   3. Renders `SQLite WAL Persistence Active` / `32 Local SQLite Items` when running on local development SQLite.
   4. Renders `Database Reconnecting / Offline` with red alert status if health check fails or database disconnects.
   5. Masks all hostnames and credentials, ensuring complete operational privacy.
+
+---
+
+## 13. Milestone 6G / Step 5.17: Fair Deal Passport & Counterfactual Offer Transparency
+
+> **Release Checkpoint:** Milestone 6G / Step 5.17 Final Release Candidate<br>
+> **Verification Date & Time:** October 17, 2026, 00:25 IST<br>
+> **Automated Backend Tests:** **178 / 178 tests passing** (0 failures, 0 errors in 108.8s)<br>
+> **Frontend Production Build:** Built cleanly in 9.6s (0 type errors, 107.29 kB gzip JS, 6.87 kB gzip CSS)<br>
+> **Core Architectural Innovation:** Inspectable, mathematical counterfactual offer audits comparing actual recommendations against rejected aggressive alternatives under non-bypassable merchant constraints.
+
+### 13.1 Conceptual Framing & Product Differentiation
+Conventional e-commerce recommendation algorithms operate as black boxes: an item is recommended with an arbitrary discount tag (e.g., *"15% OFF today only!"*), offering shoppers no rational context and leaving merchants vulnerable to automated margin erosion.
+
+**The Fair Deal Passport** transforms offer generation into an explainable, inspectable trade-off report. For every eligible complementary bundle offer, FairCart generates a deterministic 3-scenario audit report evaluating the identical active cart snapshot:
+1. **Scenario 1 — No Discount Baseline:** Standard catalogue reference price, zero promotional deduction, reference basket margin.
+2. **Scenario 2 — FairCart-Approved Offer:** The mathematically optimal bundle markdown approved by the authoritative pricing engine, satisfying both active margin floor and discount cap constraints.
+3. **Scenario 3 — Aggressive Alternative (e.g. 15% markdown):** A calculated deeper discount explicitly audited and rejected when it breaches the merchant's financial safety threshold, complete with a plain-language explanation of why it was rejected.
+
+### 13.2 Mathematical Verification on Seeded Product Catalog
+Using the canonical benchmark:
+- **Product A (In Cart):** `item-003` (Precision Vertical Wireless Mouse) — Reference price: **$65.00** ($6500¢), COGS: **$32.00** ($3200¢).
+- **Product B (Candidate):** `item-005` (Aluminum Monitor Riser Stand) — Reference price: **$55.00** ($5500¢), COGS: **$25.00** ($2500¢).
+- **Cart Economics:** Total Reference: **$120.00**, Total COGS: **$57.00**.
+- **Active Merchant Policy:** Minimum Gross Margin Floor = **50.0%** (0.50), Discount Cap = **20.0%** (0.20).
+
+| Scenario | Candidate Price | Candidate Savings | Basket Subtotal | Total Basket Profit | Basket Gross Margin | Policy Compliance | Outcome |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. No Discount Baseline** | $55.00 | $0.00 | $120.00 | $63.00 | **52.50%** | Exceeds 50% floor | Baseline Reference |
+| **2. FairCart Approved (10%)** | $49.50 | $5.50 | $114.50 | $57.50 | **50.22%** | **50.22% $\ge$ 50.0%** | **APPROVED & SELECTED** |
+| **3. Aggressive Alt (15%)** | $46.75 | $8.25 | $111.75 | $54.75 | **48.99%** | **48.99% $<$ 50.0%** | **REJECTED (Floor Violation)** |
+
+### 13.3 Customer Privacy vs. Merchant Transparency Firewall
+To protect supplier trade secrets and prevent adversarial price negotiation, FairCart AI implements a strict architectural privacy firewall:
+- **Customer Storefront Surface:** Shoppers inspect the Fair Deal Passport via modal or card badge. They see candidate savings ($5.50), final bundle price ($49.50), policy pass status, and the plain-language explanation. **Supplier COGS, internal gross profit dollars, and confidential cost baselines are strictly redacted** (`merchant_metrics = None`).
+- **Merchant Console Inspector:** Store operators and evaluators switch to `/merchant` or select "Merchant View" to inspect full financial unit economics: Basket Revenue ($114.50), Total COGS ($57.00), Gross Profit ($57.50), and exact margin delta vs baseline (-2.28%).
+- **Snapshot Immutability:** Each passport generates a deterministic cart snapshot hash (`pass_<sha256[:12]>`). If the shopper changes cart quantities or items, the passport invalidates and recalculates to prevent stale quote abuse.
+
+### 13.4 Macro-Simulation Context (Phase 2 Linkage)
+The Fair Deal Passport modal links micro-transaction transparency with macro-economic simulation evidence from the 1,000-session CRN simulator:
+- **No Discount Baseline:** 0.0% margin floor violations, but lower conversion and missed collaborative basket value.
+- **Blanket 15% Promotion:** 42.1% margin floor violations, systematically eroding merchant sustainability.
+- **FairCart AI Policy:** 0.0% margin floor violations with optimized contribution profit and guaranteed floor compliance.
+
+### 13.5 Automated Test Suite Expansion (178 Tests)
+Added `backend/tests/test_deal_passport.py` with 10 comprehensive unit tests:
+1. `test_mouse_and_stand_passport_benchmark_exact_values`: Validates exact values for the $65 mouse + $55 stand benchmark.
+2. `test_passport_quote_alignment`: Confirms subtotal and savings match `calculate_basket_quote`.
+3. `test_passport_rejects_aggressive_discount_when_margin_floor_breached`: Proves 15% discount is rejected when margin drops below 50%.
+4. `test_passport_approves_aggressive_discount_if_floor_is_lower`: Proves 15% discount passes when floor is lowered to 45%.
+5. `test_passport_shopper_privacy_excludes_merchant_metrics`: Confirms COGS and profit dollars are redacted when `view_mode="shopper"`.
+6. `test_passport_merchant_mode_includes_full_financial_metrics`: Confirms COGS and profit dollars are disclosed when `view_mode="merchant"`.
+7. `test_passport_cart_snapshot_hash_deterministic`: Verifies identical carts produce identical hashes; changed carts produce distinct hashes.
+8. `test_deal_passport_api_endpoint_shopper_mode`: Tests `POST /api/v1/deal-passport` HTTP API under shopper mode.
+9. `test_deal_passport_api_endpoint_merchant_mode`: Tests `POST /api/v1/deal-passport` HTTP API under merchant mode.
+10. `test_decision_endpoint_includes_deal_passport_for_top_offer`: Verifies `POST /api/v1/decision` automatically attaches `deal_passport` for the top eligible recommendation.
+
+---
+
+## 14. Milestone 6H / Step 5.18: Expanded Commerce Catalogue & Basket-Aware Recommendation Intelligence
+
+> **Release Checkpoint:** Milestone 6H / Step 5.18 Final Release Candidate<br>
+> **Verification Date & Time:** October 17, 2026, 01:25 IST<br>
+> **Automated Backend Tests:** **190 / 190 tests passing** (0 failures, 0 errors in 40.7s)<br>
+> **Frontend Production Build:** Built cleanly in 4.38s (0 type errors, 107.42 kB gzip JS, 6.87 kB gzip CSS)<br>
+> **Core Architectural Innovation:** Full e-commerce catalogue expansion to 96 verified products across 15 everyday categories, multi-item basket combination discovery ($\{A, B\} \to C$), strict cross-domain mathematical discrimination, and comprehensive guardrail preservation.
+
+### 14.1 Catalogue Breadth, Schema Integrity & Category Diversification
+- **Scale & Breadth:** Expanded the product catalogue from 32 items to **96 verified products** spanning **15 everyday categories**: Keyboards, Mice, Workspace, Accessories, Audio & Video, Power & Cables, Lifestyle, Grocery & Pantry, Stationery & Study, Kitchen & Dining, Food Storage & Organization, Home & Cleaning, Personal Care, Home Office, and Electronics & Gadgets.
+- **Strict Backward Compatibility:** Preserved original items `item-001` through `item-032` with identical IDs, names, prices, COGS, and relationships to maintain stored order and audit log integrity without breaking demo accounts.
+- **Financial & Data Consistency:** All products enforce positive base gross margins ($\ge 45\%$, predominantly $50\%-68\%$), integer-cent pricing ($6.00 to $80.00), realistic inventory counts ($15-120$), valid Unsplash image URLs, tags, and use cases.
+- **Hermetic Seeding:** `seed_catalog()` defaults strictly to local SQLite (`settings.DATABASE_PATH` with `database_url=""`), guaranteeing zero inadvertent writes to the live Neon cloud instance.
+
+### 14.2 Multi-Item Basket Combination Discovery ($\{A, B\} \to C$)
+- **Upgraded Apriori Mining:** Extended synthetic session generation and Apriori rule mining in `backend/app/engine/associations.py` to discover multi-item antecedents with basket size $\ge 2$.
+- **Multi-Item Synergy:** When a shopper adds multiple complementary items to their basket (e.g. Bronze-Cut Rigatoni Pasta `item-033` + San Marzano Marinara Sauce `item-035`), the association engine uncovers Aged Parmigiano-Reggiano Wedge `item-034` with positive lift and high confidence, unlocking natural multi-item culinary bundle offers.
+- **Idempotency & Recomputation:** `_mine_apriori()` clears existing itemset counts and antecedent lookup tables before mining, preventing state drift across repetitive test executions. Added `reset_association_engine()` and `force_recompute` hooks.
+
+### 14.3 Cross-Domain Mathematical Discrimination (`COMPATIBLE_CONTEXTS`)
+- **Domain Isolation:** To prevent inappropriate cross-category recommendations (e.g., recommending pasta sauce to someone buying a mechanical keyboard), `generate_synthetic_sessions()` enforces domain boundaries via `COMPATIBLE_CONTEXTS`:
+  - `pantry` $\leftrightarrow$ `kitchen` $\leftrightarrow$ `food_storage`
+  - `productivity` $\leftrightarrow$ `gaming` $\leftrightarrow$ `study` $\leftrightarrow$ `travel`
+  - `wellness` $\leftrightarrow$ `personal_care` $\leftrightarrow$ `home_care`
+- **Zero Cross-Pollination Guarantee:** Disparate domains have exact 0.0 co-occurrence in synthetic transactions, guaranteeing mathematically that tech peripherals and grocery staples will never produce cross-category association rules or ungrounded bundle promotions.
+
+### 14.4 Frontend Usability & Storefront Modernization
+- **Expanded Shopping Contexts:** Added `pantry`, `kitchen`, `food_storage`, `home_care`, and `personal_care` to `SHOPPING_CONTEXTS` in `StorefrontView.tsx`.
+- **Dynamic Category Filters & Search:** Category pills and product counts adapt dynamically to the full 96-item catalogue. The search input placeholder updates dynamically (`Search 96 products...`).
+- **Cart & Storefront Messaging:** Updated storefront banner copy and cart drawer empty state to reflect the expanded scope across desk tech, culinary staples, and everyday home essentials.
+
+### 14.5 Automated Verification & Regression Suite (190 Tests)
+Added `backend/tests/test_expanded_catalog_recsys.py` covering all 12 test specifications:
+1. `test_catalog_schema_and_financial_integrity`: Validates all 96 products for schema, positive margins ($\ge 45\%$), prices ($6–$80), inventory, and tags.
+2. `test_original_32_items_preserved_verbatim`: Asserts exact prices, COGS, and names for `item-001` through `item-032`.
+3. `test_catalog_seeding_idempotent`: Confirms repeated seeding maintains exactly 96 products without row inflation.
+4. `test_apriori_rules_mathematical_soundness`: Verifies support, confidence, and lift bounds across generated rules.
+5. `test_multi_item_basket_combination_discovery`: Proves $\{item-033, item-035\} \to item-034$ is discovered with positive lift ($> 1.0$).
+6. `test_cross_category_discrimination_tech_vs_pantry`: Proves 0 association score between keyboard and pasta sauce in both directions.
+7. `test_in_cart_items_strictly_excluded`: Asserts in-cart items are never offered as recommendation candidates.
+8. `test_contextual_intent_alignment_grocery`: Verifies pantry shopping context ranks pantry and culinary items above unrelated categories.
+9. `test_mmr_category_diversity_enforcement`: Confirms MMR candidate reranking introduces category diversity among top picks.
+10. `test_cold_start_deterministic_fallback_new_domains`: Verifies cold-start picks for new domain contexts (`pantry`, `kitchen`) return valid top-ranked domain items.
+11. `test_basket_quote_and_margin_floor_on_expanded_items`: Confirms authoritative quote and margin floor enforcement operate identically on new catalogue categories.
+12. `test_deal_passport_counterfactual_on_new_catalog_items`: Confirms 3-scenario counterfactual evaluation (Baseline, Approved, Rejected) executes correctly for new categories.
+
+All **190 tests** pass in ~40.7s with 0 failures and 0 errors.

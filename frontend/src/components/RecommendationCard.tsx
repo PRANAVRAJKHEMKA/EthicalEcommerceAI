@@ -6,6 +6,7 @@ interface RecommendationCardProps {
   recommendation: RecommendationItem;
   onAccept: (rec: RecommendationItem) => void;
   onDismiss: (productId: string) => void;
+  onOpenPassport?: (rec: RecommendationItem) => void;
   isAdded?: boolean;
   explanationText?: string;
   factualSignals?: string[];
@@ -16,6 +17,7 @@ export function RecommendationCard({
   recommendation,
   onAccept,
   onDismiss,
+  onOpenPassport,
   isAdded = false,
   explanationText,
   factualSignals,
@@ -152,17 +154,30 @@ export function RecommendationCard({
 
       <div className="mt-3">
         {/* Conditions & Disclosure Toggle */}
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-          <button
-            onClick={() => setShowDetails(!showDetails)}
-            className="inline-flex items-center space-x-1 text-slate-500 hover:text-indigo-600 transition-colors"
-          >
-            <Info className="w-3 h-3" />
-            <span>{showDetails ? 'Hide details' : 'Why this item?'}</span>
-          </button>
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] gap-2">
+          <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="inline-flex items-center space-x-1 text-slate-500 hover:text-indigo-600 transition-colors"
+            >
+              <Info className="w-3 h-3" />
+              <span>{showDetails ? 'Hide' : 'Why item?'}</span>
+            </button>
+
+            {onOpenPassport && (
+              <button
+                onClick={() => onOpenPassport(recommendation)}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold border border-indigo-200 transition-colors cursor-pointer"
+                title="Open Fair Deal Passport counterfactual audit"
+              >
+                <Sparkles className="w-3 h-3 text-indigo-600" />
+                <span>Deal Passport</span>
+              </button>
+            )}
+          </div>
 
           {hasOffer && (
-            <span className="text-[10px] text-indigo-700 font-medium truncate max-w-[190px]">
+            <span className="text-[10px] text-indigo-700 font-medium truncate max-w-[150px]">
               {recommendation.conditions}
             </span>
           )}

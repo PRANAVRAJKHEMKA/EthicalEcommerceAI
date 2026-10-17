@@ -172,6 +172,65 @@ export interface QuoteRequest {
   applied_discounts?: Record<string, number>;
 }
 
+export interface PassportPolicyChecks {
+  margin_floor_passed: boolean;
+  discount_cap_passed: boolean;
+  bundle_rule_passed: boolean;
+}
+
+export interface PassportMerchantMetrics {
+  basket_revenue: number;
+  basket_cogs: number;
+  gross_profit: number;
+  margin_delta_vs_baseline: number;
+  status: string;
+}
+
+export interface PassportScenario {
+  scenario_id: 'no_discount' | 'faircart_approved' | 'aggressive_alternative';
+  label: string;
+  discount_percentage: number;
+  candidate_price: number;
+  candidate_savings: number;
+  basket_subtotal: number;
+  basket_savings: number;
+  basket_gross_margin: number;
+  is_approved: boolean;
+  rejection_reason?: string | null;
+  policy_checks: PassportPolicyChecks;
+  shopper_explanation: string;
+  merchant_explanation: string;
+  merchant_metrics?: PassportMerchantMetrics | null;
+}
+
+export interface FairDealPassport {
+  passport_id: string;
+  cart_snapshot_hash: string;
+  generated_at: string;
+  candidate_product_id: string;
+  candidate_product_name: string;
+  candidate_reference_price: number;
+  active_margin_floor: number;
+  active_discount_cap: number;
+  selected_scenario_id: string;
+  scenarios: PassportScenario[];
+  macro_simulation_summary?: Record<string, string | number> | null;
+  explanation_source: string;
+}
+
+export interface DealPassportRequest {
+  session_id?: string;
+  cart_items: CartItemInput[];
+  candidate_product_id: string;
+  candidate_discount_pct?: number;
+  alternative_discount_pct?: number;
+  applied_discounts?: Record<string, number>;
+  margin_floor?: number;
+  discount_cap?: number;
+  shopping_context?: string;
+  view_mode?: 'shopper' | 'merchant';
+}
+
 export interface DecisionResponse {
   request_id: string;
   session_id: string;
@@ -186,6 +245,7 @@ export interface DecisionResponse {
   decision_reason: string;
   basket_gross_margin: number;
   fallback_applied: boolean;
+  deal_passport?: FairDealPassport | null;
   execution_latency_ms: number;
 }
 

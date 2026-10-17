@@ -28,6 +28,7 @@ interface StorefrontViewProps {
   explanations?: Record<string, ItemExplanation>;
   isAiGenerated?: boolean;
   onOpenTransparency?: () => void;
+  onOpenPassport?: (rec: RecommendationItem) => void;
   onViewProduct?: (productId: string) => void;
   onResetSession?: () => void;
   onHoverProduct?: (productId: string, durationMs: number, episodeId: string) => void;
@@ -36,12 +37,17 @@ interface StorefrontViewProps {
 }
 
 const SHOPPING_CONTEXTS = [
-  { id: 'all', label: 'All Setups' },
+  { id: 'all', label: 'All Domains' },
   { id: 'productivity', label: 'Productivity' },
   { id: 'gaming', label: 'Gaming' },
   { id: 'study', label: 'Study & Remote' },
   { id: 'travel', label: 'Travel Ready' },
   { id: 'wellness', label: 'Ergonomics' },
+  { id: 'pantry', label: 'Pantry' },
+  { id: 'kitchen', label: 'Kitchen & Dining' },
+  { id: 'food_storage', label: 'Food Storage' },
+  { id: 'home_care', label: 'Home & Cleaning' },
+  { id: 'personal_care', label: 'Personal Care' },
 ];
 
 export function StorefrontView({
@@ -62,6 +68,7 @@ export function StorefrontView({
   isAiGenerated,
   health,
   onOpenTransparency,
+  onOpenPassport,
   onViewProduct,
   onResetSession,
   onHoverProduct,
@@ -77,7 +84,7 @@ export function StorefrontView({
     if (health?.status === 'unhealthy') {
       return { label: 'Database Reconnecting / Offline', dot: 'bg-red-500' };
     }
-    const count = products.length || 32;
+    const count = products.length || 96;
     if (health?.database === 'postgresql') {
       return { label: `${count} PostgreSQL Cloud Items`, dot: 'bg-emerald-500' };
     }
@@ -141,11 +148,11 @@ export function StorefrontView({
           </div>
 
           <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900 leading-tight">
-            Curated Desk Tech with Transparent Commerce
+            Curated Commerce with Transparent Economic Guardrails
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
-            Explore 32 productivity tools, creator peripherals, and desk essentials backed by our curated catalogue. As you shop, FairCart AI balances customer savings with real merchant margin safety.
+            Explore {products.length || 96} curated productivity tools, culinary pantry staples, food storage, home care, and daily essentials backed by our catalog. As you shop, FairCart AI balances customer savings with real merchant margin safety.
           </p>
 
           <div className="pt-1 flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-500">
@@ -247,6 +254,7 @@ export function StorefrontView({
                   explanationText={expObj?.explanation}
                   factualSignals={expObj?.factual_signals}
                   isAiGenerated={Boolean(isAiGenerated && expObj?.source === 'gemini')}
+                  onOpenPassport={onOpenPassport}
                 />
               );
             })}
@@ -279,7 +287,7 @@ export function StorefrontView({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search 32 products..."
+            placeholder={`Search ${products.length || 96} products...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition-all"

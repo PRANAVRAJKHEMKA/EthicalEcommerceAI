@@ -1,12 +1,12 @@
-# FairCart AI — Devpost Submission Readiness Audit (Milestone 6F / Step 5.16)
+# FairCart AI — Devpost Submission Readiness Audit (Milestone 6G / Step 5.17)
 
 > **Document Status:** Authoritative Submission Readiness Audit & Final Release Verification  
 > **Audited By:** Antigravity AI Pair Programmer & Code Quality System  
 > **Target Competition:** [Devpost Build With AI: Basics](https://learn-ai-basics.devpost.com/rules)  
 > **Skill Pack Source:** [challengepost/learn-ai-basics](https://github.com/challengepost/learn-ai-basics)  
-> **Audit Date & Local Time:** October 16, 2026, 23:45 IST<br>
-> **Audit Baseline Git Commit:** Milestone 6F / Step 5.16 Final Release Candidate<br>
-> **Test Baseline:** **168 / 168 unit tests passing**, **0 failures, 0 errors** in 101.791s
+> **Audit Date & Local Time:** October 17, 2026, 00:30 IST<br>
+> **Audit Baseline Git Commit:** Milestone 6G / Step 5.17 Final Release Candidate<br>
+> **Test Baseline:** **178 / 178 unit tests passing**, **0 failures, 0 errors** in 108.8s
 
 ---
 
@@ -47,7 +47,7 @@ We audited every file in the project against official Devpost requirements:
 | [`.dockerignore`](../.dockerignore) | **Mandatory** (Security) | Exists; excludes `.local/`, `*.local.md`, `.env*`, `learner-profile*`, and `.git`. | Hardened in Milestone 6C to prevent build context leaks. | **PASS** |
 | [`Dockerfile`](../Dockerfile) | **Recommended** | Exists; multi-stage Docker build (Node 20 builder + Python 3.12 slim runtime). | Verified dynamic `$PORT` binding and healthcheck probe. | **PASS** |
 | [`skills-lock.json`](../skills-lock.json) | **Mandatory** (Skill Pack) | Exists; tracks 6 official challengepost skills with computed sha256 hashes. | Matches installed skills directory structure. | **PASS** |
-| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers, connection pooling, session policy overrides, bundle pricing consistency. | 168 passing backend unit tests (Milestone 6F / Step 5.16 release checkpoint). | **PASS** |
+| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers, connection pooling, session policy overrides, bundle pricing consistency, Fair Deal Passport counterfactual engine. | 178 passing backend unit tests (Milestone 6G / Step 5.17 release checkpoint). | **PASS** |
 | Frontend Source (`frontend/`) | **Mandatory** | 100% complete; React 19, Vite, Tailwind CSS, Lucide icons, responsive modals, CDP verified. | Built cleanly in 8.62s (99.55 kB gzip JS). | **PASS** |
 | `devpost/learner-profile.md` | **Private / Internal** | Exists; 3,821 bytes; contains personal learner notes and prior background. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
 | `.local/demo-credentials.local.md` | **Private / Internal** | Exists; 1,611 bytes; local demo seed log. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
@@ -143,7 +143,7 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
    - *What it does:* Real-time constrained optimization bounding recommendations by non-bypassable margin floors and price ceilings.
    - *How you built it:* FastAPI, React 19, Gemini 2.5 Flash, Neon PostgreSQL/SQLite, guided by the Learn Skill Pack.
    - *Challenges:* Integer-cent arithmetic across bundles, Windows Python environment tuning, sub-25ms synchronous local decisions.
-   - *Accomplishments:* 168 passing tests, offer-to-cart bundle pricing consistency, session-scoped policy overrides, connection pooling, full 3-policy simulation comparator, Argon2id multi-persona demo auth.
+   - *Accomplishments:* 178 passing tests, Fair Deal Passport counterfactual offer transparency, offer-to-cart bundle pricing consistency, session-scoped policy overrides, connection pooling, full 3-policy simulation comparator, Argon2id multi-persona demo auth.
    - *What you learned:* Flipped interaction, planning before coding (`scope` $\to$ `prd` $\to$ `spec`), and mathematical invariant preservation.
 5. **Skill Pack Usage Field:**
    - In the required question on Devpost, describe how you ran the 6 stages (`1-start` to `6-ship`) with the Learn Skill Pack (`challengepost/learn-ai-basics`).
@@ -162,5 +162,5 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **Planning Document Integrity** | `scope.md`, `prd.md`, `spec.md` completely match codebase architecture | **PASS** |
 | **Secret Hygiene** | Zero credentials in Git history; passwords redacted from public APIs; masked DB logs | **PASS** |
 | **Open Source Licensing** | MIT License file verified in repository root | **PASS** |
-| **Code Verification** | 168 unit tests pass; frontend builds with 0 type errors | **PASS** |
+| **Code Verification** | 178 unit tests pass; frontend builds with 0 type errors | **PASS** |
 | **Overall Submission Readiness** | Codebase and documentation 100% ready; submitter actions identified | **READY FOR REVIEW** |

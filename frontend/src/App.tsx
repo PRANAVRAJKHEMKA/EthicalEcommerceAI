@@ -8,6 +8,7 @@ import {
   ItemExplanation,
   UserProfile,
   MerchantSettings,
+  FairDealPassport,
 } from './types.ts';
 import {
   fetchHealth,
@@ -21,11 +22,13 @@ import {
   createSimulatedOrder,
   getSessionPolicy,
   saveSessionPolicy,
+  fetchDealPassport,
 } from './api.ts';
 import { Header } from './components/Header.tsx';
 import { CartDrawer, isQuoteAlignedWithCart } from './components/CartDrawer.tsx';
 import { CheckoutModal } from './components/CheckoutModal.tsx';
 import { TransparencyModal } from './components/TransparencyModal.tsx';
+import { FairDealPassportModal } from './components/FairDealPassportModal.tsx';
 import { LoginModal } from './components/LoginModal.tsx';
 import { OrderHistoryModal } from './components/OrderHistoryModal.tsx';
 import { StorefrontView } from './views/StorefrontView.tsx';
@@ -123,6 +126,11 @@ export default function App() {
   const [isTransparencyOpen, setIsTransparencyOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
+  const [isPassportOpen, setIsPassportOpen] = useState(false);
+  const [passportData, setPassportData] = useState<FairDealPassport | null>(null);
+  const [passportLoading, setPassportLoading] = useState(false);
+  const [passportError, setPassportError] = useState<string | null>(null);
+  const [passportCandidateId, setPassportCandidateId] = useState<string | null>(null);
 
   // Decision Engine state
   const [decision, setDecision] = useState<DecisionResponse | null>(null);
@@ -664,6 +672,70 @@ export default function App() {
     setDismissedIds((prev) => new Set([...prev, productId]));
   };
 
+  const handleOpenPassport = useCallback(
+    async (rec: RecommendationItem) => {
+      setPassportCandidateId(rec.product_id);
+      setIsPassportOpen(true);
+      setPassportError(null);
+
+      // Fast preview if the current decision payload already holds the passport for this candidate
+      if (
+        decision?.deal_passport &&
+        decision.deal_passport.candidate_product_id === rec.product_id
+      ) {
+        setPassportData(decision.deal_passport);
+      } else {
+        setPassportLoading(true);
+      }
+
+      try {
+        const cartPayload = cart.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          discount_percentage: item.appliedDiscountPct ?? 0.0,
+        }));
+
+        const passport = await fetchDealPassport({
+          session_id: sessionId,
+          cart_items: cartPayload,
+          candidate_product_id: rec.product_id,
+          margin_floor: sessionPolicy.margin_floor,
+          discount_cap: sessionPolicy.discount_cap,
+          view_mode: activeTab === 'merchant' ? 'merchant' : 'shopper',
+        });
+        setPassportData(passport);
+      } catch (err) {
+        setPassportError(err instanceof Error ? err.message : 'Failed to load Fair Deal Passport');
+      } finally {
+        setPassportLoading(false);
+      }
+    },
+    [
+      cart,
+      sessionId,
+      sessionPolicy.margin_floor,
+      sessionPolicy.discount_cap,
+      activeTab,
+      decision?.deal_passport,
+    ]
+  );
+
+  const handleAcceptPassportOffer = (
+    productId: string,
+    price: number,
+    discountPct: number
+  ) => {
+    const productObj = products.find((p) => p.id === productId);
+    if (productObj) {
+      const cond =
+        discountPct > 0
+          ? `Fair Deal Passport approved bundle (${(discountPct * 100).toFixed(0)}% off)`
+          : undefined;
+      handleAddToCart(productObj, price, discountPct, cond);
+    }
+    setIsPassportOpen(false);
+  };
+
   const handleSelectShoppingContext = (ctx: string) => {
     setShoppingContext(ctx);
     recordSessionEvent({
@@ -729,6 +801,7 @@ export default function App() {
               onResetSession={handleResetSession}
               onHoverProduct={handleProductHover}
               onFocusProduct={handleProductFocus}
+              onOpenPassport={handleOpenPassport}
               isUpdating={isDecisionLoading}
               health={health}
             />
@@ -761,6 +834,7 @@ export default function App() {
         recommendations={decision?.recommendations || []}
         onAcceptRecommendation={handleAcceptRecommendation}
         onDismissRecommendation={handleDismissRecommendation}
+        onOpenPassport={handleOpenPassport}
         dismissedIds={dismissedIds}
         basketQuote={decision?.cart_quote}
         explanations={explanations}
@@ -785,6 +859,18 @@ export default function App() {
         isOpen={isTransparencyOpen}
         onClose={() => setIsTransparencyOpen(false)}
         geminiConfigured={health?.gemini_configured ?? false}
+      />
+
+      {/* Fair Deal Passport Counterfactual Modal */}
+      <FairDealPassportModal
+        isOpen={isPassportOpen}
+        onClose={() => setIsPassportOpen(false)}
+        passport={passportData}
+        loading={passportLoading}
+        error={passportError}
+        onAcceptApprovedOffer={handleAcceptPassportOffer}
+        isItemInCart={cart.some((i) => i.product.id === passportCandidateId)}
+        viewMode={activeTab === 'merchant' ? 'merchant' : 'shopper'}
       />
 
       {/* Demo Account Authentication Modal */}

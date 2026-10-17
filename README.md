@@ -9,7 +9,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-168%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-190%20Passing-brightgreen.svg)]()
 
 ---
 
@@ -21,6 +21,9 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
 3. **Opaque black-box models** that neither shoppers nor merchants can interpret or audit.
 
 **FairCart AI reverses this paradigm.** It optimizes collaborative transaction value and merchant contribution profit under mathematical economic guardrails:
+- **Expanded Commerce Catalogue & Basket Combinations:** 96 verified products across 15 everyday categories (Desk Peripherals, Workspace, Audio, GaN Power, Pantry & Groceries, Kitchen Cookware, Food Storage, Eco Cleaning, Personal Care, Stationery, and Home Office). Discovers multi-product basket antecedents ($\{A, B\} \to C$) with verified lift while strictly enforcing cross-domain discrimination (e.g. tech peripherals never recommend food items).
+- **Fair Deal Passport & Counterfactual Offer Transparency:** Every eligible bundle offer includes an inspectable, deterministic 3-scenario audit report comparing: (1) *No Discount Baseline* (standard catalogue reference price), (2) *FairCart-Approved Offer* (exact customer savings verified against merchant policy), and (3) *Aggressive Alternative* (calculated markdown such as 15% explicitly rejected when breaching active constraints like a 50% margin floor).
+- **Shopper Privacy Firewall:** Confidential supplier COGS, raw cost baselines, and merchant dollar profits are strictly redacted from the customer surface, while remaining completely transparent in the Merchant Console inspector.
 - **Non-bypassable Gross-Margin Floor & Margin Transparency:** Every discount is evaluated across the entire basket ($\text{Basket Gross Margin} \ge \text{Configured Floor}$). The interface clearly separates **Catalogue Base Margin** (supplier baseline) from **Verified Bundle Margin** (post-discount economics), preventing false alarms on natively low-margin items.
 - **Session-Scoped Merchant Policies:** Evaluators and hackathon judges can safely adjust margin floor and discount cap sliders in the Merchant Console via isolated, per-browser session overrides without altering shared global database state or requiring administrative secrets.
 - **Cart Quote Alignment & Subtotal Integrity:** Cart drawer and checkout modals strictly verify quote alignment against active basket contents, ensuring accurate line-item totals and avoiding stale or mismatched discount applications.
@@ -67,9 +70,10 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
              Local Development                 Production Persistence
           SQLite Database (faircart.db)       Neon Serverless PostgreSQL
           - Deterministic startup seed        - PostgresConnectionPool
-          - 32 products, 980 rules            - Permanent order history
-          - 5 demo accounts, 15 orders        - Connection reuse (250-480ms)
-          - Zero-cost tier compatible         - Zero-cost tier compatible
+          - 96 products across 15 categories  - Permanent order history
+          - Multi-item basket rules           - Connection reuse (250-480ms)
+          - 5 demo accounts, 15 orders        - Zero-cost tier compatible
+          - Zero-cost tier compatible
 ```
 
 ---
@@ -114,7 +118,7 @@ npm run dev
 
 ### 3. Run Automated Tests
 ```bash
-# Execute the full backend test suite (168 tests passing at Step 5.16 release checkpoint)
+# Execute the full backend test suite (190 tests passing across 15 everyday categories)
 python -m unittest discover -s backend/tests -p "test_*.py"
 
 # Verify frontend production build
@@ -146,7 +150,7 @@ For judges and evaluators, FairCart AI includes **five distinct synthetic custom
 FairCart AI supports two database persistence runtimes configured via the `DATABASE_URL` environment variable:
 
 - **Mode 1 — SQLite (Default Local Development):**  
-  Zero external configuration. Uses local `faircart.db`. Automatically seeded on startup with 32 curated products, 980 association rules, 5 demo accounts, and 15 itemized past orders. Designed for offline development, local unit tests, and self-contained demonstrations.
+  Zero external configuration. Uses local `faircart.db`. Automatically seeded on startup with 96 curated products across 15 categories, multi-item basket association rules, 5 demo accounts, and 15 itemized past orders. Designed for offline development, local unit tests, and self-contained demonstrations.
 - **Mode 2 — Neon Serverless PostgreSQL (Durable Cloud Persistence):**  
   Configured by setting `DATABASE_URL=postgresql://user:password@ep-xyz.neon.tech/neondb?sslmode=require`.  
   Enables permanent persistence of simulated checkouts, merchant policy slider adjustments, and simulation runs across cloud container cold boots.

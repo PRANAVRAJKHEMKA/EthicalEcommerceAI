@@ -45,6 +45,7 @@ interface CartDrawerProps {
   isAiGenerated?: boolean;
   isQuoteUpdating?: boolean;
   marginFloor?: number;
+  onOpenPassport?: (rec: RecommendationItem) => void;
 }
 
 export function CartDrawer({
@@ -64,6 +65,7 @@ export function CartDrawer({
   isAiGenerated,
   isQuoteUpdating,
   marginFloor,
+  onOpenPassport,
 }: CartDrawerProps) {
   if (!isOpen) return null;
 
@@ -147,7 +149,7 @@ export function CartDrawer({
                 <div>
                   <h3 className="font-semibold text-slate-800 text-sm">Your cart is empty</h3>
                   <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">
-                    Explore our 32 curated tech accessories and peripherals to experience FairCart AI.
+                    Explore our curated everyday essentials, culinary staples, and desk tech to experience FairCart AI.
                   </p>
                 </div>
                 <button
@@ -208,6 +210,36 @@ export function CartDrawer({
                                 <span className="inline-flex items-center px-1 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
                                   Bundle
                                 </span>
+                                {onOpenPassport && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onOpenPassport({
+                                        product_id: item.product.id,
+                                        name: item.product.name,
+                                        category: item.product.category,
+                                        reference_price: item.product.reference_price,
+                                        is_offered: true,
+                                        discount_percentage: item.appliedDiscountPct ?? 0,
+                                        final_price: unitPrice,
+                                        savings: Math.max(0, item.product.reference_price - unitPrice),
+                                        currency: 'USD',
+                                        tier: 'Bundle',
+                                        conditions: item.appliedCondition || 'Active bundle offer',
+                                        basket_gross_margin: displayedMargin,
+                                        decision_reason: item.appliedCondition || 'Active bundle offer',
+                                        affinity_score: 1.0,
+                                        compatibility_reason: item.product.description,
+                                        inventory: item.product.inventory,
+                                        image_url: item.product.image_url,
+                                      })
+                                    }
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                                    title="View Fair Deal Passport explanation"
+                                  >
+                                    Deal Passport
+                                  </button>
+                                )}
                               </>
                             ) : (
                               <span className="text-[11px] text-slate-500 font-mono">
@@ -285,6 +317,7 @@ export function CartDrawer({
                             explanationText={expObj?.explanation}
                             factualSignals={expObj?.factual_signals}
                             isAiGenerated={Boolean(isAiGenerated && expObj?.source === 'gemini')}
+                            onOpenPassport={onOpenPassport}
                           />
                         );
                       })}

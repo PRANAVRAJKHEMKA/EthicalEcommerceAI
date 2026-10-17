@@ -35,6 +35,7 @@ import {
   resetSessionPolicy,
   DEFAULT_DEMO_POLICY,
 } from '../api.ts';
+import { MerchantDealPassportInspector } from '../components/MerchantDealPassportInspector.tsx';
 
 interface MerchantViewProps {
   products: Product[];
@@ -556,6 +557,15 @@ export function MerchantView({ products, health, sessionPolicy, onPolicyChange }
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* STEP 5.17: FAIR DEAL PASSPORT & COUNTERFACTUAL INSPECTOR */}
+      {/* ========================================================================= */}
+      <MerchantDealPassportInspector
+        products={products}
+        marginFloor={settings.margin_floor}
+        discountCap={settings.discount_cap}
+      />
 
       {/* ========================================================================= */}
       {/* MILESTONE 5: THREE-POLICY ECONOMIC SIMULATION COMPARATOR */}
