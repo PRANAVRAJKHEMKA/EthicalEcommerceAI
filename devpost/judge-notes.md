@@ -1367,9 +1367,9 @@ Retained for future development milestones:
 ## 16. Step 5.20: Multi-Store Profit Intelligence & Comparative Auditing
 
 > **Release Checkpoint:** Step 5.20 Engineering Implementation<br>
-> **Automated Backend Tests:** **250 / 250 tests passing** (0 failures, 0 errors, full discovery suite)<br>
-> **Frontend Production Build:** Built cleanly with 0 type errors (118.98 kB gzip JS, 7.43 kB gzip CSS)<br>
-> **Core Architectural Innovation:** Backend-authoritative CSV ingestion and validation engine, distinct order grouping integrity, strict currency isolation, zero/negative denominator safeguards, observational channel attribution, automated diagnostic detection for uneconomic discounting and refund leakage, multi-tenant merchant role scoping and tenant isolation, idempotent schema migrations, and a complete multi-store analytics UI in the Merchant Console.
+> **Automated Backend Tests:** **251 / 251 tests passing** (0 failures, 0 errors, full discovery suite)<br>
+> **Frontend Production Build:** Built cleanly with 0 type errors (119.15 kB gzip JS, 7.54 kB gzip CSS)<br>
+> **Core Architectural Innovation:** Backend-authoritative CSV ingestion and validation engine, distinct order grouping integrity, strict currency isolation, zero/negative denominator safeguards, observational channel attribution, automated diagnostic detection for uneconomic discounting and refund leakage, multi-tenant merchant role scoping and tenant isolation, idempotent schema migrations, protected benchmark demo sandbox guardrails, and a complete multi-store analytics UI in the Merchant Console.
 
 ### 16.1 Business Motivation & Architecture
 Merchants operating multiple digital storefronts (e.g. flagship tech boutique, lifestyle living store, organic grocery pantry) require comparative intelligence to answer six fundamental questions:
@@ -1421,5 +1421,5 @@ Embedded directly into the Merchant Console beneath Step 5.19:
 
 ### 16.5 Automated Test Verification
 Automated in `backend/tests/test_step520_multi_store_intelligence.py`:
-- 23 targeted unit and integration tests verifying CSV parsing, PII rejection, resource limits, financial formulas, distinct order grouping, zero-revenue safeguards, idempotency, currency isolation, diagnostics, all 6 FastAPI endpoints, security/authorization guardrails (two-tier RBAC, merchant tenant isolation, customer session privilege escalation rejection, storefront ID sanitization, scoped storefront deletion, and production admin token enforcement), and schema migration idempotency.
-- Full test run reports **250 passing backend tests** across the entire repository.
+- 24 targeted unit and integration tests verifying CSV parsing, PII rejection, resource limits, financial formulas, distinct order grouping, zero-revenue safeguards, idempotency, currency isolation, diagnostics, all 6 FastAPI endpoints, security/authorization guardrails (two-tier RBAC, merchant tenant isolation, customer session privilege escalation rejection, storefront ID sanitization, scoped storefront deletion, benchmark demo store deletion protection, and production admin token enforcement), and schema migration idempotency.
+- Full test run reports **251 passing backend tests** across the entire repository.

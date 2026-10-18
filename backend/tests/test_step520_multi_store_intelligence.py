@@ -876,6 +876,39 @@ class TestStep520MultiStoreIntelligence(unittest.TestCase):
 
         conn.close()
 
+    def test_benchmark_demo_storefront_protected_from_deletion_by_ordinary_demo_user(self):
+        """In production, ordinary demo merchant sessions cannot delete the protected benchmark demonstration storefronts."""
+        m_user = self.repo.get_user_by_username("demo_merchant")
+        if not m_user:
+            m_user = self.repo.create_user("usr_demo_merchant", "demo_merchant", "Merchant One", "Owner", "hash", role="merchant")
+        m_token = "demo-merchant-protect-token-999"
+        self.repo.create_session(m_token, m_user.id, "2099-01-01T00:00:00Z")
+
+        orig_env = settings.ENVIRONMENT
+        orig_token = settings.ADMIN_TOKEN
+        try:
+            settings.ENVIRONMENT = "production"
+            settings.ADMIN_TOKEN = "admin-secret-xyz"
+
+            # Attempting to delete protected benchmark storefront 'store-alpha-tech' with only a demo merchant session returns 403
+            resp = self.client.delete(
+                "/api/v1/analytics/multi-store/data?storefront_id=store-alpha-tech",
+                cookies={"faircart_session": m_token},
+            )
+            self.assertEqual(resp.status_code, 403)
+            self.assertIn("protected benchmark demonstration dataset", resp.json()["detail"])
+
+            # An authorized admin can delete it if needed
+            admin_resp = self.client.delete(
+                "/api/v1/analytics/multi-store/data?storefront_id=store-alpha-tech",
+                headers={"X-Admin-Token": "admin-secret-xyz"},
+            )
+            self.assertEqual(admin_resp.status_code, 200)
+        finally:
+            self.repo.delete_session(m_token)
+            settings.ENVIRONMENT = orig_env
+            settings.ADMIN_TOKEN = orig_token
+
 
 if __name__ == "__main__":
     unittest.main()

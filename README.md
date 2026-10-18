@@ -9,7 +9,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-250%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-251%20Passing-brightgreen.svg)]()
 
 ---
 

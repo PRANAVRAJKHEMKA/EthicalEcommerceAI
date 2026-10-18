@@ -210,9 +210,15 @@ export function MultiStoreProfitIntelligence() {
       {/* Header Banner */}
       <div className="p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center space-x-2 bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-400/30">
-            <Store className="w-3.5 h-3.5" />
-            <span>Step 5.20 · Multi-Store Profit Intelligence</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center space-x-2 bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-400/30">
+              <Store className="w-3.5 h-3.5" />
+              <span>Step 5.20 · Multi-Store Profit Intelligence</span>
+            </div>
+            <div className="inline-flex items-center space-x-1.5 bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-amber-400/30">
+              <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>Shared Demo Sandbox · Synthetic Data Only</span>
+            </div>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -891,7 +897,7 @@ export function MultiStoreProfitIntelligence() {
             <div className="space-y-1">
               <span className="font-bold text-amber-950">Demonstration Sandbox & Privacy Guarantee:</span>
               <p className="text-[11px] text-amber-800 leading-relaxed">
-                You are operating in the shared FairCart Demonstration Merchant environment. All data imported here is scoped for comparative analytics auditing. <strong>Do not upload confidential, proprietary, or personal business datasets to the shared demo environment.</strong> Synthetic or anonymized CSVs only. Zero-PII policy is strictly enforced: files containing customer names, emails, phones, or credit cards are automatically rejected.
+                You are operating in the shared FairCart Demonstration Merchant environment. All data imported here is scoped to the shared demo tenant (<code>usr_demo_merchant</code>) and is visible across the shared demo environment; <strong>it is not private to an individual visitor</strong>. <strong>Do not upload confidential, proprietary, or personal business datasets.</strong> Synthetic or anonymized CSVs only. Zero-PII policy is strictly enforced: files containing customer names, emails, phones, or credit cards are automatically rejected.
               </p>
               <label className="flex items-start space-x-2 text-xs text-amber-950 cursor-pointer pt-1 font-medium">
                 <input
@@ -900,7 +906,7 @@ export function MultiStoreProfitIntelligence() {
                   onChange={(e) => setNonConfidentialAffirmed(e.target.checked)}
                   className="mt-0.5 rounded border-amber-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <span>I affirm this dataset contains synthetic or non-confidential demonstration data only.</span>
+                <span>I affirm this dataset contains synthetic or non-confidential demonstration data only, and understand it is visible in the shared demo sandbox.</span>
               </label>
             </div>
           </div>

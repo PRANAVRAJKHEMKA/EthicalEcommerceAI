@@ -172,6 +172,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def seed_multi_store_demo_fixtures_internal(repo: CatalogRepository) -> dict:
+    """Loads bundled synthetic multi-store orders and traffic CSV fixtures into the local database."""
+    orders_fixture = BASE_DIR / "backend" / "tests" / "fixtures" / "synthetic_multi_store_orders.csv"
+    traffic_fixture = BASE_DIR / "backend" / "tests" / "fixtures" / "synthetic_multi_store_traffic.csv"
+
+    if not orders_fixture.exists() or not traffic_fixture.exists():
+        raise FileNotFoundError("Demo fixtures not found on server disk.")
+
+    orders_csv = orders_fixture.read_text(encoding="utf-8")
+    traffic_csv = traffic_fixture.read_text(encoding="utf-8")
+    demo_merchant_id = "usr_demo_merchant"
+
+    # Ingest orders
+    is_v_o, order_rows, err_o, _ = validate_and_parse_csv(orders_csv, import_type="orders")
+    order_batch_id = f"demo-orders-{int(time.time())}"
+    inserted_orders = repo.insert_storefront_order_lines(order_rows, batch_id=order_batch_id, merchant_id=demo_merchant_id)
+    repo.record_import_batch({
+        "id": order_batch_id,
+        "merchant_id": demo_merchant_id,
+        "storefront_id": "multi-store-demo",
+        "import_type": "orders",
+        "filename": "synthetic_multi_store_orders.csv",
+        "schema_version": "1.0",
+        "status": "completed",
+        "total_rows": len(order_rows),
+        "accepted_rows": inserted_orders,
+        "rejected_rows": 0,
+        "errors": [],
+    })
+
+    # Ingest traffic
+    is_v_t, traffic_rows, err_t, _ = validate_and_parse_csv(traffic_csv, import_type="traffic")
+    traffic_batch_id = f"demo-traffic-{int(time.time())}"
+    inserted_traffic = repo.insert_storefront_traffic_events(traffic_rows, batch_id=traffic_batch_id, merchant_id=demo_merchant_id)
+    repo.record_import_batch({
+        "id": traffic_batch_id,
+        "merchant_id": demo_merchant_id,
+        "storefront_id": "multi-store-demo",
+        "import_type": "traffic",
+        "filename": "synthetic_multi_store_traffic.csv",
+        "schema_version": "1.0",
+        "status": "completed",
+        "total_rows": len(traffic_rows),
+        "accepted_rows": inserted_traffic,
+        "rejected_rows": 0,
+        "errors": [],
+    })
+
+    return {
+        "status": "success",
+        "order_lines_imported": inserted_orders,
+        "traffic_events_imported": inserted_traffic,
+        "order_batch_id": order_batch_id,
+        "traffic_batch_id": traffic_batch_id,
+        "message": f"Successfully loaded synthetic multi-store demo fixtures: {inserted_orders} order lines across 3 stores, {inserted_traffic} traffic events across 5 acquisition channels.",
+    }
+
+
 # Initialize database schema and ensure deterministic catalog & demo accounts seeding on startup
 @app.on_event("startup")
 def on_startup():
@@ -184,6 +242,8 @@ def on_startup():
         if repo.count_users() < 5:
             from backend.scripts.seed_demo_accounts import seed_demo_accounts
             seed_demo_accounts()
+        if len(repo.get_storefront_order_lines(merchant_id="usr_demo_merchant")) == 0:
+            seed_multi_store_demo_fixtures_internal(repo)
     except Exception as e:
         print(f"Startup catalog/demo account verification note: {e}")
 
@@ -1138,60 +1198,7 @@ def seed_multi_store_demo_data(
     """Loads bundled synthetic multi-store orders and traffic CSV fixtures into the local database."""
     try:
         repo = CatalogRepository()
-        orders_fixture = BASE_DIR / "backend" / "tests" / "fixtures" / "synthetic_multi_store_orders.csv"
-        traffic_fixture = BASE_DIR / "backend" / "tests" / "fixtures" / "synthetic_multi_store_traffic.csv"
-
-        if not orders_fixture.exists() or not traffic_fixture.exists():
-            raise HTTPException(status_code=404, detail="Demo fixtures not found on server disk.")
-
-        orders_csv = orders_fixture.read_text(encoding="utf-8")
-        traffic_csv = traffic_fixture.read_text(encoding="utf-8")
-        demo_merchant_id = "usr_demo_merchant"
-
-        # Ingest orders
-        is_v_o, order_rows, err_o, _ = validate_and_parse_csv(orders_csv, import_type="orders")
-        order_batch_id = f"demo-orders-{int(time.time())}"
-        inserted_orders = repo.insert_storefront_order_lines(order_rows, batch_id=order_batch_id, merchant_id=demo_merchant_id)
-        repo.record_import_batch({
-            "id": order_batch_id,
-            "merchant_id": demo_merchant_id,
-            "storefront_id": "multi-store-demo",
-            "import_type": "orders",
-            "filename": "synthetic_multi_store_orders.csv",
-            "schema_version": "1.0",
-            "status": "completed",
-            "total_rows": len(order_rows),
-            "accepted_rows": inserted_orders,
-            "rejected_rows": 0,
-            "errors": [],
-        })
-
-        # Ingest traffic
-        is_v_t, traffic_rows, err_t, _ = validate_and_parse_csv(traffic_csv, import_type="traffic")
-        traffic_batch_id = f"demo-traffic-{int(time.time())}"
-        inserted_traffic = repo.insert_storefront_traffic_events(traffic_rows, batch_id=traffic_batch_id, merchant_id=demo_merchant_id)
-        repo.record_import_batch({
-            "id": traffic_batch_id,
-            "merchant_id": demo_merchant_id,
-            "storefront_id": "multi-store-demo",
-            "import_type": "traffic",
-            "filename": "synthetic_multi_store_traffic.csv",
-            "schema_version": "1.0",
-            "status": "completed",
-            "total_rows": len(traffic_rows),
-            "accepted_rows": inserted_traffic,
-            "rejected_rows": 0,
-            "errors": [],
-        })
-
-        return {
-            "status": "success",
-            "order_lines_imported": inserted_orders,
-            "traffic_events_imported": inserted_traffic,
-            "order_batch_id": order_batch_id,
-            "traffic_batch_id": traffic_batch_id,
-            "message": f"Successfully loaded synthetic multi-store demo fixtures: {inserted_orders} order lines across 3 stores, {inserted_traffic} traffic events across 5 acquisition channels.",
-        }
+        return seed_multi_store_demo_fixtures_internal(repo)
     except HTTPException:
         raise
     except Exception as e:
@@ -1213,6 +1220,13 @@ def clear_multi_store_data(
         if clean_sid:
             # Scoped storefront deletion can be performed by the authenticated merchant who owns it
             auth = verify_merchant_access(request, x_admin_token, authorization)
+            # Protect bundled benchmark demo stores from deletion by ordinary demo users in the shared demo sandbox
+            is_admin = auth.get("is_admin", False)
+            if auth["merchant_id"] == "usr_demo_merchant" and clean_sid in ("multi-store-demo", "store-alpha-tech", "store-beta-living", "store-gamma-pantry") and not is_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Storefront '{clean_sid}' is part of the protected benchmark demonstration dataset and cannot be deleted by ordinary demo users. Administrative authorization required.",
+                )
             result = repo.clear_storefront_data(merchant_id=auth["merchant_id"], storefront_id=clean_sid)
             return {
                 "status": "success",
