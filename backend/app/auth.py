@@ -17,13 +17,19 @@ from backend.app.db.repository import CatalogRepository, UserEntity
 
 ph = PasswordHasher()
 
-# Allowed synthetic demo accounts for one-click evaluation login
+# Allowed synthetic demo accounts for one-click customer evaluation login
 ALLOWED_DEMO_PERSONAS = {
     "demo_gamer",
     "demo_student",
     "demo_creator",
     "demo_traveler",
     "demo_office",
+}
+
+# Allowed merchant personas for authenticated merchant operations
+ALLOWED_MERCHANT_PERSONAS = {
+    "demo_merchant",
+    "demo_merchant_2",
 }
 
 # Sliding-window rate limiter for demo login attempts (max 15 attempts per 60s per client IP)

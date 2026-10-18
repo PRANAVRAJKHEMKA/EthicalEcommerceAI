@@ -470,4 +470,157 @@ export interface UpliftEvaluationResponse {
   real_dataset_status: string;
 }
 
+// ==============================================================================
+// MULTI-STORE PROFIT INTELLIGENCE TYPES (Step 5.20)
+// ==============================================================================
 
+export interface CSVValidationIssue {
+  row: number;
+  column: string;
+  message: string;
+  sample_value?: string;
+}
+
+export interface CSVValidationResponse {
+  valid: boolean;
+  import_type: 'orders' | 'traffic';
+  filename: string;
+  total_rows: number;
+  accepted_rows: number;
+  rejected_rows: number;
+  errors: CSVValidationIssue[];
+  preview_rows: Record<string, any>[];
+  detected_storefronts: string[];
+  detected_currencies: string[];
+  detected_channels: string[];
+  summary_metrics: Record<string, any>;
+}
+
+export interface CSVImportRequest {
+  import_type: 'orders' | 'traffic';
+  csv_content: string;
+  filename?: string;
+  storefront_override?: string;
+}
+
+export interface CSVImportResponse {
+  batch_id: string;
+  status: 'completed' | 'partial' | 'failed';
+  import_type: string;
+  storefront_id: string;
+  filename: string;
+  total_rows: number;
+  accepted_rows: number;
+  rejected_rows: number;
+  errors: CSVValidationIssue[];
+  message: string;
+}
+
+export interface StorefrontPerformanceMetric {
+  storefront_id: string;
+  storefront_name: string;
+  currency: string;
+  unique_sessions: number;
+  product_views: number;
+  recommendation_impressions: number;
+  recommendation_clicks: number;
+  cart_adds: number;
+  checkouts_started: number;
+  distinct_orders: number;
+  units_sold: number;
+  gross_revenue: number;
+  discount_amount: number;
+  refund_amount: number;
+  net_revenue: number;
+  cogs: number;
+  gross_profit: number;
+  gross_margin_pct: number;
+  aov: number;
+  conversion_rate: number;
+  recommendation_ctr: number;
+  discount_share_pct: number;
+  refund_rate_pct: number;
+  data_quality_flags: string[];
+}
+
+export interface ChannelPerformanceMetric {
+  channel: string;
+  channel_label: string;
+  currency: string;
+  unique_sessions: number;
+  attributed_orders: number;
+  gross_revenue: number;
+  discount_amount: number;
+  net_revenue: number;
+  cogs: number;
+  gross_profit: number;
+  gross_margin_pct: number;
+  aov: number;
+  conversion_rate: number;
+  attribution_note: string;
+}
+
+export interface CategoryProfitabilityMetric {
+  category: string;
+  units_sold: number;
+  gross_revenue: number;
+  discount_amount: number;
+  net_revenue: number;
+  cogs: number;
+  gross_profit: number;
+  gross_margin_pct: number;
+}
+
+export interface DiscountingDiagnostic {
+  severity: 'alert' | 'warning' | 'info';
+  storefront_id: string;
+  storefront_name: string;
+  metric: string;
+  detail: string;
+}
+
+export interface MultiStoreAggregatedTotals {
+  currency: string;
+  total_storefronts: number;
+  total_distinct_orders: number;
+  total_unique_sessions: number;
+  gross_revenue: number;
+  discount_amount: number;
+  refund_amount: number;
+  net_revenue: number;
+  cogs: number;
+  gross_profit: number;
+  gross_margin_pct: number;
+  overall_aov: number;
+  overall_conversion_rate: number;
+}
+
+export interface MultiStoreProfitResponse {
+  date_range_start?: string;
+  date_range_end?: string;
+  selected_currency: string;
+  currencies_available: string[];
+  total_storefronts: number;
+  total_batches_imported: number;
+  aggregated_totals: MultiStoreAggregatedTotals;
+  storefronts: StorefrontPerformanceMetric[];
+  channels: ChannelPerformanceMetric[];
+  category_profitability: CategoryProfitabilityMetric[];
+  discounting_diagnostics: DiscountingDiagnostic[];
+  methodology_disclaimer: string;
+  data_provenance: string;
+}
+
+export interface ImportBatchRecord {
+  id: string;
+  storefront_id: string;
+  import_type: string;
+  filename: string;
+  schema_version: string;
+  status: string;
+  total_rows: number;
+  accepted_rows: number;
+  rejected_rows: number;
+  errors: CSVValidationIssue[];
+  imported_at: string;
+}

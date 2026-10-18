@@ -37,6 +37,7 @@ import {
 } from '../api.ts';
 import { MerchantDealPassportInspector } from '../components/MerchantDealPassportInspector.tsx';
 import { TransactionOutcomeLedger } from '../components/TransactionOutcomeLedger.tsx';
+import { MultiStoreProfitIntelligence } from '../components/MultiStoreProfitIntelligence.tsx';
 
 interface MerchantViewProps {
   products: Product[];
@@ -572,6 +573,11 @@ export function MerchantView({ products, health, sessionPolicy, onPolicyChange }
       {/* STEP 5.19: TRANSACTION OUTCOME INTELLIGENCE & CAUSAL UPLIFT LAB */}
       {/* ========================================================================= */}
       <TransactionOutcomeLedger />
+
+      {/* ========================================================================= */}
+      {/* STEP 5.20: MULTI-STORE PROFIT INTELLIGENCE */}
+      {/* ========================================================================= */}
+      <MultiStoreProfitIntelligence />
 
       {/* ========================================================================= */}
       {/* MILESTONE 5: THREE-POLICY ECONOMIC SIMULATION COMPARATOR */}

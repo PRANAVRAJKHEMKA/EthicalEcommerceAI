@@ -1,4 +1,5 @@
 import math
+from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 class HealthResponse(BaseModel):
@@ -503,4 +504,117 @@ class UpliftEvaluationResponse(BaseModel):
     strategy_comparison: list[UpliftStrategyComparison]
     methodology_disclaimer: str
     real_dataset_status: str
+
+
+# ==============================================================================
+# MULTI-STORE PROFIT INTELLIGENCE SCHEMAS (Step 5.20)
+# ==============================================================================
+
+class CSVValidationIssue(BaseModel):
+    """Row-level validation error or warning for imported CSV files."""
+    row: int
+    column: str
+    message: str
+    sample_value: str | None = None
+
+
+class CSVValidationResponse(BaseModel):
+    """Preview and validation summary for an uploaded CSV before confirmation."""
+    valid: bool
+    import_type: str  # 'orders' or 'traffic'
+    filename: str
+    total_rows: int
+    accepted_rows: int
+    rejected_rows: int
+    errors: list[CSVValidationIssue] = Field(default_factory=list)
+    preview_rows: list[dict[str, Any]] = Field(default_factory=list)
+    detected_storefronts: list[str] = Field(default_factory=list)
+    detected_currencies: list[str] = Field(default_factory=list)
+    detected_channels: list[str] = Field(default_factory=list)
+    summary_metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class CSVImportRequest(BaseModel):
+    """Payload to confirm importing a validated CSV content string."""
+    import_type: str  # 'orders' or 'traffic'
+    csv_content: str
+    filename: str = "uploaded.csv"
+    storefront_override: str | None = None
+
+
+class CSVImportResponse(BaseModel):
+    """Result of confirmed CSV ingestion into persistent database tables."""
+    batch_id: str
+    status: str  # 'completed', 'partial', 'failed'
+    import_type: str
+    storefront_id: str
+    filename: str
+    total_rows: int
+    accepted_rows: int
+    rejected_rows: int
+    errors: list[CSVValidationIssue] = Field(default_factory=list)
+    message: str
+
+
+class StorefrontPerformanceMetric(BaseModel):
+    """Financial and funnel performance metrics for an individual storefront."""
+    storefront_id: str
+    storefront_name: str
+    currency: str
+    unique_sessions: int
+    product_views: int
+    recommendation_impressions: int
+    recommendation_clicks: int
+    cart_adds: int
+    checkouts_started: int
+    distinct_orders: int
+    units_sold: int
+    gross_revenue: float
+    discount_amount: float
+    refund_amount: float
+    net_revenue: float
+    cogs: float
+    gross_profit: float
+    gross_margin_pct: float
+    aov: float
+    conversion_rate: float
+    recommendation_ctr: float
+    discount_share_pct: float
+    refund_rate_pct: float
+    data_quality_flags: list[str] = Field(default_factory=list)
+
+
+class ChannelPerformanceMetric(BaseModel):
+    """Acquisition-channel performance breakdown."""
+    channel: str
+    channel_label: str
+    currency: str
+    unique_sessions: int
+    attributed_orders: int
+    gross_revenue: float
+    discount_amount: float
+    net_revenue: float
+    cogs: float
+    gross_profit: float
+    gross_margin_pct: float
+    aov: float
+    conversion_rate: float
+    attribution_note: str = "Attributed revenue is observational; does not prove incremental causation."
+
+
+class MultiStoreProfitResponse(BaseModel):
+    """Authoritative multi-store comparison and profit intelligence response."""
+    date_range_start: str | None = None
+    date_range_end: str | None = None
+    selected_currency: str
+    currencies_available: list[str] = Field(default_factory=list)
+    total_storefronts: int
+    total_batches_imported: int
+    aggregated_totals: dict[str, Any] = Field(default_factory=dict)
+    storefronts: list[StorefrontPerformanceMetric] = Field(default_factory=list)
+    channels: list[ChannelPerformanceMetric] = Field(default_factory=list)
+    category_profitability: list[dict[str, Any]] = Field(default_factory=list)
+    discounting_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    methodology_disclaimer: str
+    data_provenance: str
 

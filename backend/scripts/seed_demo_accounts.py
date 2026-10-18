@@ -231,6 +231,29 @@ DEMO_PERSONAS = [
     },
 ]
 
+MERCHANT_PERSONAS = [
+    {
+        "id": "usr_demo_merchant",
+        "username": "demo_merchant",
+        "display_name": "FairCart Merchant (Store Owner)",
+        "persona_description": "Store owner and multi-store merchant administrator managing catalogue pricing, margins, and profit intelligence.",
+        "password_prefix": "Merchant",
+        "role": "merchant",
+        "orders": [],
+    },
+    {
+        "id": "usr_demo_merchant_2",
+        "username": "demo_merchant_2",
+        "display_name": "Secondary Merchant (External Store)",
+        "persona_description": "Secondary store merchant managing separate external storefronts.",
+        "password_prefix": "MerchantTwo",
+        "role": "merchant",
+        "orders": [],
+    },
+]
+
+ALL_PROVISIONED_PERSONAS = DEMO_PERSONAS + MERCHANT_PERSONAS
+
 def generate_random_password(prefix: str) -> str:
     """Generates a cryptographically random, high-entropy password (20 chars)."""
     # 14 random chars from upper, lower, digits, and special characters
@@ -265,13 +288,13 @@ def save_local_credentials(credentials: dict[str, str]) -> Path:
         "# FairCart AI — Local Demonstration Credentials",
         "",
         "> **CONFIDENTIAL / LOCAL ONLY** — Excluded from Git via `.gitignore`.",
-        "> These credentials are provided strictly for demonstration and testing of Milestone 6B.",
+        "> These credentials are provided strictly for demonstration and testing.",
         "",
         "| Persona | Username | Generated Password | Role Description |",
         "| :--- | :--- | :--- | :--- |",
     ]
 
-    for p in DEMO_PERSONAS:
+    for p in ALL_PROVISIONED_PERSONAS:
         u = p["username"]
         pw = credentials.get(u, "")
         role = p["persona_description"].split(".")[0]
@@ -282,14 +305,16 @@ def save_local_credentials(credentials: dict[str, str]) -> Path:
         "## Security Notes",
         "- Stored in SQLite as **Argon2id** password hashes ($m=65536, t=3, p=4).",
         "- Ordinary customer logins grant **zero** merchant administrative privileges.",
+        "- Merchant logins are scoped to their respective owned multi-store datasets.",
         "- To rotate credentials, run `python -m backend.scripts.seed_demo_accounts --rotate`.",
     ])
 
     report_path.write_text("\n".join(md_lines), encoding="utf-8")
     return report_path
 
+
 def seed_demo_accounts(db_path: str | None = None, rotate: bool = False) -> dict[str, str]:
-    """Seeds the 5 demo accounts and their synthetic order histories idempotently."""
+    """Seeds demo customer and merchant accounts idempotently."""
     init_db(db_path)
     repo = CatalogRepository(db_path)
     ph = PasswordHasher()
@@ -302,12 +327,13 @@ def seed_demo_accounts(db_path: str | None = None, rotate: bool = False) -> dict
     try:
         cursor = conn.cursor()
 
-        # 1. Provision Users
+        # 1. Provision Users (Customers + Merchants)
         from backend.app.auth import verify_password
 
-        for p in DEMO_PERSONAS:
+        for p in ALL_PROVISIONED_PERSONAS:
             u = p["username"]
             existing_user = repo.get_user_by_username(u)
+            role = p.get("role", "customer")
 
             if existing_user and not rotate and u in existing_creds:
                 if verify_password(existing_user.password_hash, existing_creds[u]):
@@ -316,22 +342,22 @@ def seed_demo_accounts(db_path: str | None = None, rotate: bool = False) -> dict
                     raw_pass = existing_creds[u]
                     p_hash = ph.hash(raw_pass)
                     final_creds[u] = raw_pass
-                    cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?;", (p_hash, u))
+                    cursor.execute("UPDATE users SET password_hash = ?, role = ? WHERE username = ?;", (p_hash, role, u))
             else:
                 raw_pass = generate_random_password(p["password_prefix"])
                 p_hash = ph.hash(raw_pass)
                 final_creds[u] = raw_pass
 
                 if existing_user:
-                    cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?;", (p_hash, u))
+                    cursor.execute("UPDATE users SET password_hash = ?, role = ? WHERE username = ?;", (p_hash, role, u))
                 else:
                     now = datetime.now(timezone.utc).isoformat()
                     cursor.execute("""
-                        INSERT INTO users (id, username, display_name, persona_description, password_hash, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?);
-                    """, (p["id"], u, p["display_name"], p["persona_description"], p_hash, now))
+                        INSERT INTO users (id, username, display_name, persona_description, password_hash, role, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?);
+                    """, (p["id"], u, p["display_name"], p["persona_description"], p_hash, role, now))
 
-        # 2. Provision Synthetic Past Orders (Idempotent)
+        # 2. Provision Synthetic Past Orders (Idempotent for customer personas)
         for p in DEMO_PERSONAS:
             user_id = p["id"]
             for ord_data in p["orders"]:

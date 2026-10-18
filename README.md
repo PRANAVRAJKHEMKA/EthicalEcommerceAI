@@ -9,7 +9,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-190%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-250%20Passing-brightgreen.svg)]()
 
 ---
 
@@ -31,6 +31,8 @@ Conventional e-commerce recommendation systems prioritize short-term click-throu
 - **Hybrid Recommendation Pipeline:** 10-stage recommender combining Apriori basket association rules, session interaction history (views, intentional dwell hovers $\ge 700\text{ms}$), context filtering, supervised ranking (`HistGradientBoostingClassifier`), and Maximal Marginal Relevance (MMR) diversity reranking.
 - **Dual Explainability:** Generates plain-language customer rationale via Google Gemini 2.5 Flash when `GEMINI_API_KEY` is configured, with an instant sub-5ms deterministic offline fallback when unconfigured or offline. Merchants receive exact mathematical attribution logs.
 - **Three-Policy Economic Simulator:** Monte Carlo comparator evaluating No Discount vs. Blanket 15% Promotion vs. FairCart AI with Common Random Numbers (CRN) across 1,000 synthetic sessions. Designed to validate pipeline mechanics and margin trade-offs; does not claim real-world consumer uplift or live market revenue.
+- **Transaction Outcome Intelligence & Offline Causal Uplift Lab (Step 5.19):** First-party anonymous commerce event ledger and offline Two-Model T-Learner causal uplift pipeline comparing targeting strategies (Always Discount vs. Targeted vs. No Discount) using synthetic fixtures based on the Criteo Uplift benchmark schema.
+- **Multi-Store Profit Intelligence & Comparative Auditing (Step 5.20):** Backend-authoritative ingestion of order line sales and traffic funnel CSV data across multiple owned storefronts. Aggregates distinct completed orders, net revenue, wholesale COGS, gross profit ($), gross margin %, and observational channel attribution while strictly isolating currencies and rejecting PII. Features automated diagnostic detection for uneconomic discounting subsidies (discounts > 15% with gross margin < 25%) and customer refund leakage.
 
 ---
 
@@ -118,7 +120,7 @@ npm run dev
 
 ### 3. Run Automated Tests
 ```bash
-# Execute the full backend test suite (190 tests passing across 15 everyday categories)
+# Execute the full backend test suite (240 tests passing across 15 everyday categories and multi-store intelligence)
 python -m unittest discover -s backend/tests -p "test_*.py"
 
 # Verify frontend production build

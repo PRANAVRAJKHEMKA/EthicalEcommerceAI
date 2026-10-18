@@ -470,10 +470,20 @@ def init_db(
                 display_name TEXT NOT NULL,
                 persona_description TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'customer',
                 created_at TEXT NOT NULL
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+
+        # Migration: ensure role column exists in users
+        if is_pg:
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'customer';")
+        else:
+            cursor.execute("PRAGMA table_info(users);")
+            u_cols = [r[1] for r in cursor.fetchall()]
+            if u_cols and "role" not in u_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer';")
 
         # Server-Validated User Sessions (Milestone 6B)
         cursor.execute("""
@@ -503,6 +513,86 @@ def init_db(
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);")
+
+        # Multi-Store Import Batches (Step 5.20)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS storefront_import_batches (
+                id TEXT PRIMARY KEY,
+                merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant',
+                storefront_id TEXT NOT NULL,
+                import_type TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                schema_version TEXT NOT NULL DEFAULT '1.0',
+                status TEXT NOT NULL,
+                total_rows INTEGER NOT NULL DEFAULT 0,
+                accepted_rows INTEGER NOT NULL DEFAULT 0,
+                rejected_rows INTEGER NOT NULL DEFAULT 0,
+                errors_json TEXT NOT NULL DEFAULT '[]',
+                imported_at TEXT NOT NULL
+            );
+        """)
+
+        # Multi-Store Order Lines (Step 5.20)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS storefront_order_lines (
+                id TEXT PRIMARY KEY,
+                merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant',
+                batch_id TEXT NOT NULL,
+                storefront_id TEXT NOT NULL,
+                order_id TEXT NOT NULL,
+                order_timestamp TEXT NOT NULL,
+                order_status TEXT NOT NULL DEFAULT 'completed',
+                currency TEXT NOT NULL DEFAULT 'USD',
+                product_id TEXT NOT NULL,
+                quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+                gross_line_revenue_cents INTEGER NOT NULL CHECK (gross_line_revenue_cents >= 0),
+                discount_cents INTEGER NOT NULL DEFAULT 0 CHECK (discount_cents >= 0),
+                refund_cents INTEGER NOT NULL DEFAULT 0 CHECK (refund_cents >= 0),
+                cogs_cents INTEGER NOT NULL DEFAULT 0 CHECK (cogs_cents >= 0),
+                attribution_channel TEXT NOT NULL DEFAULT 'unattributed'
+            );
+        """)
+
+        # Multi-Store Traffic & Funnel Events (Step 5.20)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS storefront_traffic_events (
+                id TEXT PRIMARY KEY,
+                merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant',
+                batch_id TEXT NOT NULL,
+                storefront_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                event_timestamp TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                acquisition_channel TEXT NOT NULL DEFAULT 'direct',
+                product_id TEXT NOT NULL DEFAULT '',
+                order_id TEXT NOT NULL DEFAULT ''
+            );
+        """)
+
+        # Multi-Store Migration: ensure merchant_id column exists before creating indexes on it
+        if is_pg:
+            cursor.execute("ALTER TABLE storefront_import_batches ADD COLUMN IF NOT EXISTS merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant';")
+            cursor.execute("ALTER TABLE storefront_order_lines ADD COLUMN IF NOT EXISTS merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant';")
+            cursor.execute("ALTER TABLE storefront_traffic_events ADD COLUMN IF NOT EXISTS merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant';")
+        else:
+            for tbl in ("storefront_import_batches", "storefront_order_lines", "storefront_traffic_events"):
+                cursor.execute(f"PRAGMA table_info({tbl});")
+                cols = [r[1] for r in cursor.fetchall()]
+                if cols and "merchant_id" not in cols:
+                    cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant';")
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_import_merchant ON storefront_import_batches(merchant_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_import_storefront ON storefront_import_batches(storefront_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sol_merchant_store ON storefront_order_lines(merchant_id, storefront_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sol_store_time ON storefront_order_lines(storefront_id, order_timestamp);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sol_order ON storefront_order_lines(order_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sol_channel ON storefront_order_lines(attribution_channel);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_merchant_store ON storefront_traffic_events(merchant_id, storefront_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_store_time ON storefront_traffic_events(storefront_id, event_timestamp);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_session ON storefront_traffic_events(session_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_channel ON storefront_traffic_events(acquisition_channel);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_event_type ON storefront_traffic_events(event_type);")
 
         conn.commit()
     finally:

@@ -22,6 +22,11 @@ import {
   DemoPersona,
   FunnelMetricsResponse,
   UpliftEvaluationResponse,
+  CSVImportRequest,
+  CSVImportResponse,
+  CSVValidationResponse,
+  MultiStoreProfitResponse,
+  ImportBatchRecord,
 } from './types.ts';
 
 // Configurable API base url supporting environment override or relative URL for unified deployment
@@ -493,4 +498,157 @@ export async function triggerUpliftEvaluation(outcome: string = 'conversion', da
   return res.json();
 }
 
+// ==============================================================================
+// MULTI-STORE PROFIT INTELLIGENCE CLIENT (Step 5.20)
+// ==============================================================================
 
+export function getStoredAdminToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem('faircart_admin_token') || null;
+}
+
+function getMultiStoreHeaders(): Record<string, string> {
+  const headers = getAuthHeaders();
+  const adminToken = getStoredAdminToken();
+  if (adminToken) headers['X-Admin-Token'] = adminToken;
+  return headers;
+}
+
+export async function previewMultiStoreCSV(req: CSVImportRequest): Promise<CSVValidationResponse> {
+  const headers = getMultiStoreHeaders();
+
+  const res = await fetch(`${API_BASE}/api/v1/analytics/multi-store/preview`, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    let msg = `CSV preview failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function importMultiStoreCSV(req: CSVImportRequest): Promise<CSVImportResponse> {
+  const headers = getMultiStoreHeaders();
+
+  const res = await fetch(`${API_BASE}/api/v1/analytics/multi-store/import`, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    let msg = `CSV import failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function fetchMultiStoreProfit(
+  storefrontId?: string,
+  currency?: string,
+  dateFrom?: string,
+  dateTo?: string
+): Promise<MultiStoreProfitResponse> {
+  const params = new URLSearchParams();
+  if (storefrontId) params.append('storefront_id', storefrontId);
+  if (currency) params.append('currency', currency);
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
+
+  const headers = getMultiStoreHeaders();
+  delete headers['Content-Type'];
+
+  const qs = params.toString();
+  const url = `${API_BASE}/api/v1/analytics/multi-store/profit${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, { headers, credentials: 'include' });
+  if (!res.ok) {
+    let msg = `Failed to fetch multi-store profit metrics (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function fetchMultiStoreBatches(limit: number = 50): Promise<ImportBatchRecord[]> {
+  const headers = getMultiStoreHeaders();
+  delete headers['Content-Type'];
+
+  const res = await fetch(`${API_BASE}/api/v1/analytics/multi-store/batches?limit=${limit}`, {
+    headers,
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Failed to fetch multi-store batches (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function seedMultiStoreDemoData(): Promise<{
+  status: string;
+  order_lines_imported: number;
+  traffic_events_imported: number;
+  message: string;
+}> {
+  const headers = getMultiStoreHeaders();
+  delete headers['Content-Type'];
+
+  const res = await fetch(`${API_BASE}/api/v1/analytics/multi-store/seed-demo`, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Failed to seed demo multi-store data (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function clearMultiStoreData(storefrontId?: string): Promise<{
+  status: string;
+  storefront_id: string;
+  cleared: Record<string, number>;
+  message: string;
+}> {
+  const headers = getMultiStoreHeaders();
+  delete headers['Content-Type'];
+
+  const qs = storefrontId ? `?storefront_id=${encodeURIComponent(storefrontId)}` : '';
+  const res = await fetch(`${API_BASE}/api/v1/analytics/multi-store/data${qs}`, {
+    method: 'DELETE',
+    headers,
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let msg = `Failed to clear multi-store data (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}

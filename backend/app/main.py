@@ -40,11 +40,20 @@ from backend.app.models.schemas import (
     UserProfile,
     FunnelMetricsResponse,
     UpliftEvaluationResponse,
+    CSVImportRequest,
+    CSVImportResponse,
+    CSVValidationResponse,
+    MultiStoreProfitResponse,
 )
 from backend.app.engine.simulator import EconomicSimulator
 from backend.app.engine.uplift import run_uplift_evaluation, UpliftDatasetSchemaError
+from backend.app.engine.multi_store_analytics import (
+    validate_and_parse_csv,
+    aggregate_profit_intelligence,
+)
 from backend.app.auth import (
     ALLOWED_DEMO_PERSONAS,
+    ALLOWED_MERCHANT_PERSONAS,
     attach_session_cookie,
     check_demo_login_rate_limit,
     check_login_rate_limit,
@@ -271,10 +280,11 @@ def demo_login(req: DemoLoginRequest, request: Request, response: Response) -> L
     check_demo_login_rate_limit(client_ip)
 
     persona_key = req.persona.strip().lower()
-    if persona_key not in ALLOWED_DEMO_PERSONAS:
+    allowed_personas = ALLOWED_DEMO_PERSONAS | ALLOWED_MERCHANT_PERSONAS
+    if persona_key not in allowed_personas:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid demo persona '{req.persona}'. Must be one of: {sorted(ALLOWED_DEMO_PERSONAS)}",
+            detail=f"Invalid demo persona '{req.persona}'. Must be one of: {sorted(allowed_personas)}",
         )
 
     repo = CatalogRepository()
@@ -805,6 +815,426 @@ def trigger_uplift_evaluation(
 ) -> UpliftEvaluationResponse:
     """Triggers on-demand offline uplift evaluation with optional dataset path."""
     return get_uplift_evaluation(outcome=outcome, dataset_path=dataset_path)
+
+# ==============================================================================
+# MULTI-STORE PROFIT INTELLIGENCE ENDPOINTS (Step 5.20)
+# ==============================================================================
+
+def sanitize_storefront_id(storefront_id: str | None) -> str | None:
+    """Validates and sanitizes storefront_id query parameters against injection or path traversal."""
+    if not storefront_id:
+        return None
+    cleaned = storefront_id.strip()
+    if not re.match(r"^[a-zA-Z0-9_\-\.]{1,64}$", cleaned):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid storefront_id: must be 1-64 alphanumeric characters, underscores, hyphens, or periods.",
+        )
+    return cleaned
+
+
+def verify_merchant_access(
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> dict:
+    """Verifies merchant authorization for previewing, importing, and viewing profit intelligence.
+
+    Allows authenticated merchant sessions or administrative token holders.
+    Customer session tokens are strictly rejected with HTTP 403.
+    Unauthenticated requests in production are rejected with HTTP 401.
+    """
+    admin_token = settings.ADMIN_TOKEN.strip() if settings.ADMIN_TOKEN else ""
+    is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
+
+    supplied_token = x_admin_token
+    if not supplied_token and authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            supplied_token = parts[1]
+
+    # 1. Admin Token match
+    if admin_token and supplied_token == admin_token:
+        return {
+            "merchant_id": "usr_demo_merchant",
+            "username": "admin",
+            "role": "admin",
+            "is_admin": True,
+        }
+
+    # 2. Check for authenticated user session
+    from backend.app.auth import extract_session_token, ALLOWED_DEMO_PERSONAS
+    session_token = extract_session_token(request)
+    if session_token:
+        repo = CatalogRepository()
+        session = repo.get_session(session_token)
+        if session:
+            username = session.get("username", "")
+            role = session.get("role", "customer")
+            # Customer accounts can never access merchant operations or confidential profit data
+            if role != "merchant" and username in ALLOWED_DEMO_PERSONAS:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Customer session tokens cannot access merchant profit intelligence or perform merchant operations.",
+                )
+            # Authenticated merchant session
+            return {
+                "merchant_id": session["user_id"],
+                "username": username,
+                "role": role,
+                "is_admin": False,
+            }
+
+    # 3. No valid session or admin token
+    if is_prod or admin_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Merchant authentication required to access this resource.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 4. Local development environment fallback
+    return {
+        "merchant_id": "usr_demo_merchant",
+        "username": "demo_merchant",
+        "role": "merchant",
+        "is_admin": True,
+    }
+
+
+def verify_merchant_admin_access(
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> dict:
+    """Verifies merchant administrator authorization for mutating/destructive multi-store operations."""
+    admin_token = settings.ADMIN_TOKEN.strip() if settings.ADMIN_TOKEN else ""
+    is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
+
+    supplied_token = x_admin_token
+    if not supplied_token and authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            supplied_token = parts[1]
+
+    # Reject customer session tokens explicitly
+    repo = CatalogRepository()
+    cookie_token = request.cookies.get("faircart_session", "").strip()
+    if cookie_token and repo.get_session(cookie_token):
+        s = repo.get_session(cookie_token)
+        if s.get("role") == "customer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Customer session tokens cannot be used to perform merchant administrative operations.",
+            )
+
+    if supplied_token and repo.get_session(supplied_token):
+        s = repo.get_session(supplied_token)
+        if s.get("role") == "customer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Customer session tokens cannot be used to perform merchant administrative operations.",
+            )
+
+    if admin_token:
+        if supplied_token != admin_token:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Merchant authorization required.",
+            )
+    elif is_prod:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Merchant administrative operations disabled in production: administrative token not configured.",
+        )
+
+    return {"is_admin": True}
+
+
+@app.post("/api/v1/analytics/multi-store/preview", response_model=CSVValidationResponse, tags=["Multi-Store Intelligence"])
+def preview_multi_store_csv(
+    request: CSVImportRequest,
+    _auth: dict = Depends(verify_merchant_access),
+) -> CSVValidationResponse:
+    """Dry-run validation and summary preview of an uploaded order-lines or traffic CSV."""
+    try:
+        clean_override = sanitize_storefront_id(request.storefront_override)
+        is_valid, accepted_rows, errors, summary_metrics = validate_and_parse_csv(
+            csv_content=request.csv_content,
+            import_type=request.import_type,
+            storefront_override=clean_override,
+            default_currency="USD",
+        )
+        preview_rows = accepted_rows[:10]
+        return CSVValidationResponse(
+            valid=is_valid,
+            import_type=request.import_type,
+            filename=request.filename,
+            total_rows=summary_metrics.get("total_rows_parsed", len(accepted_rows) + len(errors)),
+            accepted_rows=len(accepted_rows),
+            rejected_rows=len(errors),
+            errors=errors,
+            preview_rows=preview_rows,
+            detected_storefronts=summary_metrics.get("detected_storefronts", []),
+            detected_currencies=summary_metrics.get("detected_currencies", []),
+            detected_channels=summary_metrics.get("detected_channels", []),
+            summary_metrics=summary_metrics,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to preview multi-store CSV: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"CSV preview failed: {str(e)}")
+
+
+@app.post("/api/v1/analytics/multi-store/import", response_model=CSVImportResponse, tags=["Multi-Store Intelligence"])
+def import_multi_store_csv(
+    request: CSVImportRequest,
+    auth: dict = Depends(verify_merchant_access),
+) -> CSVImportResponse:
+    """Validates and persists order-lines or traffic-events CSV data scoped to the authenticated merchant."""
+    try:
+        import uuid
+        repo = CatalogRepository()
+        clean_override = sanitize_storefront_id(request.storefront_override)
+        merchant_id = auth["merchant_id"]
+
+        is_valid, accepted_rows, errors, summary_metrics = validate_and_parse_csv(
+            csv_content=request.csv_content,
+            import_type=request.import_type,
+            storefront_override=clean_override,
+            default_currency="USD",
+        )
+
+        batch_id = f"batch-{uuid.uuid4().hex[:12]}"
+        storefront_id = clean_override or (summary_metrics.get("detected_storefronts", ["default"])[0] if summary_metrics.get("detected_storefronts") else "default")
+
+        if not is_valid and len(accepted_rows) == 0:
+            repo.record_import_batch({
+                "id": batch_id,
+                "merchant_id": merchant_id,
+                "storefront_id": storefront_id,
+                "import_type": request.import_type,
+                "filename": request.filename,
+                "schema_version": "1.0",
+                "status": "failed",
+                "total_rows": len(errors),
+                "accepted_rows": 0,
+                "rejected_rows": len(errors),
+                "errors": errors,
+            })
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV validation failed with {len(errors)} error(s). No rows were imported."
+            )
+
+        # Persist rows scoped to authenticated merchant
+        if request.import_type == "orders":
+            inserted = repo.insert_storefront_order_lines(accepted_rows, batch_id=batch_id, merchant_id=merchant_id)
+        elif request.import_type == "traffic":
+            inserted = repo.insert_storefront_traffic_events(accepted_rows, batch_id=batch_id, merchant_id=merchant_id)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported import_type '{request.import_type}'. Must be 'orders' or 'traffic'.")
+
+        status_str = "completed" if len(errors) == 0 else "partial"
+        repo.record_import_batch({
+            "id": batch_id,
+            "merchant_id": merchant_id,
+            "storefront_id": storefront_id,
+            "import_type": request.import_type,
+            "filename": request.filename,
+            "schema_version": "1.0",
+            "status": status_str,
+            "total_rows": len(accepted_rows) + len(errors),
+            "accepted_rows": inserted,
+            "rejected_rows": len(errors),
+            "errors": errors,
+        })
+
+        return CSVImportResponse(
+            batch_id=batch_id,
+            status=status_str,
+            import_type=request.import_type,
+            storefront_id=storefront_id,
+            filename=request.filename,
+            total_rows=len(accepted_rows) + len(errors),
+            accepted_rows=inserted,
+            rejected_rows=len(errors),
+            errors=errors,
+            message=f"Successfully imported {inserted} {request.import_type} records into {storefront_id} (Batch {batch_id})."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Multi-store CSV import error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Multi-store import failed: {str(e)}")
+
+
+@app.get("/api/v1/analytics/multi-store/profit", response_model=MultiStoreProfitResponse, tags=["Multi-Store Intelligence"])
+def get_multi_store_profit_metrics(
+    storefront_id: str | None = None,
+    currency: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    auth: dict = Depends(verify_merchant_access),
+) -> MultiStoreProfitResponse:
+    """Aggregates and compares multi-store commerce performance strictly scoped to the authenticated merchant."""
+    try:
+        clean_sid = sanitize_storefront_id(storefront_id)
+        merchant_id = auth["merchant_id"]
+        repo = CatalogRepository()
+        order_lines = repo.get_storefront_order_lines(
+            merchant_id=merchant_id,
+            storefront_id=clean_sid,
+            date_from=date_from,
+            date_to=date_to,
+            currency=currency,
+        )
+        traffic_events = repo.get_storefront_traffic_events(
+            merchant_id=merchant_id,
+            storefront_id=clean_sid,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        catalogue = repo.get_all_products()
+        batches = repo.get_import_batches(merchant_id=merchant_id, limit=100)
+
+        intelligence = aggregate_profit_intelligence(
+            order_rows=order_lines,
+            traffic_rows=traffic_events,
+            catalogue_products=catalogue,
+            currency_filter=currency,
+        )
+
+        intelligence["total_batches_imported"] = len(batches)
+        intelligence["date_range_start"] = date_from
+        intelligence["date_range_end"] = date_to
+
+        return MultiStoreProfitResponse(**intelligence)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate multi-store profit metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to calculate multi-store metrics: {str(e)}")
+
+
+@app.get("/api/v1/analytics/multi-store/batches", tags=["Multi-Store Intelligence"])
+def get_multi_store_batches(
+    limit: int = 50,
+    auth: dict = Depends(verify_merchant_access),
+):
+    """Returns the audit log of recent multi-store CSV import batches for the authenticated merchant."""
+    try:
+        repo = CatalogRepository()
+        return repo.get_import_batches(merchant_id=auth["merchant_id"], limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch import batches: {str(e)}")
+
+
+@app.post("/api/v1/analytics/multi-store/seed-demo", tags=["Multi-Store Intelligence"])
+def seed_multi_store_demo_data(
+    _auth: dict = Depends(verify_merchant_admin_access),
+):
+    """Loads bundled synthetic multi-store orders and traffic CSV fixtures into the local database."""
+    try:
+        repo = CatalogRepository()
+        orders_fixture = BASE_DIR / "backend" / "tests" / "fixtures" / "synthetic_multi_store_orders.csv"
+        traffic_fixture = BASE_DIR / "backend" / "tests" / "fixtures" / "synthetic_multi_store_traffic.csv"
+
+        if not orders_fixture.exists() or not traffic_fixture.exists():
+            raise HTTPException(status_code=404, detail="Demo fixtures not found on server disk.")
+
+        orders_csv = orders_fixture.read_text(encoding="utf-8")
+        traffic_csv = traffic_fixture.read_text(encoding="utf-8")
+        demo_merchant_id = "usr_demo_merchant"
+
+        # Ingest orders
+        is_v_o, order_rows, err_o, _ = validate_and_parse_csv(orders_csv, import_type="orders")
+        order_batch_id = f"demo-orders-{int(time.time())}"
+        inserted_orders = repo.insert_storefront_order_lines(order_rows, batch_id=order_batch_id, merchant_id=demo_merchant_id)
+        repo.record_import_batch({
+            "id": order_batch_id,
+            "merchant_id": demo_merchant_id,
+            "storefront_id": "multi-store-demo",
+            "import_type": "orders",
+            "filename": "synthetic_multi_store_orders.csv",
+            "schema_version": "1.0",
+            "status": "completed",
+            "total_rows": len(order_rows),
+            "accepted_rows": inserted_orders,
+            "rejected_rows": 0,
+            "errors": [],
+        })
+
+        # Ingest traffic
+        is_v_t, traffic_rows, err_t, _ = validate_and_parse_csv(traffic_csv, import_type="traffic")
+        traffic_batch_id = f"demo-traffic-{int(time.time())}"
+        inserted_traffic = repo.insert_storefront_traffic_events(traffic_rows, batch_id=traffic_batch_id, merchant_id=demo_merchant_id)
+        repo.record_import_batch({
+            "id": traffic_batch_id,
+            "merchant_id": demo_merchant_id,
+            "storefront_id": "multi-store-demo",
+            "import_type": "traffic",
+            "filename": "synthetic_multi_store_traffic.csv",
+            "schema_version": "1.0",
+            "status": "completed",
+            "total_rows": len(traffic_rows),
+            "accepted_rows": inserted_traffic,
+            "rejected_rows": 0,
+            "errors": [],
+        })
+
+        return {
+            "status": "success",
+            "order_lines_imported": inserted_orders,
+            "traffic_events_imported": inserted_traffic,
+            "order_batch_id": order_batch_id,
+            "traffic_batch_id": traffic_batch_id,
+            "message": f"Successfully loaded synthetic multi-store demo fixtures: {inserted_orders} order lines across 3 stores, {inserted_traffic} traffic events across 5 acquisition channels.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to seed demo multi-store fixtures: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to seed demo data: {str(e)}")
+
+
+@app.delete("/api/v1/analytics/multi-store/data", tags=["Multi-Store Intelligence"])
+def clear_multi_store_data(
+    request: Request,
+    storefront_id: str | None = None,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    """Clears imported multi-store data, scoped to storefront or globally."""
+    try:
+        clean_sid = sanitize_storefront_id(storefront_id)
+        repo = CatalogRepository()
+        if clean_sid:
+            # Scoped storefront deletion can be performed by the authenticated merchant who owns it
+            auth = verify_merchant_access(request, x_admin_token, authorization)
+            result = repo.clear_storefront_data(merchant_id=auth["merchant_id"], storefront_id=clean_sid)
+            return {
+                "status": "success",
+                "storefront_id": clean_sid,
+                "cleared": result,
+                "message": f"Cleared multi-store data for storefront {clean_sid}: {result.get('order_lines_cleared', 0)} order lines, {result.get('traffic_events_cleared', 0)} traffic events, {result.get('batches_cleared', 0)} batches."
+            }
+        else:
+            # Destructive global wipe across all storefronts requires explicit administrative authorization
+            verify_merchant_admin_access(request, x_admin_token, authorization)
+            result = repo.clear_storefront_data(storefront_id=None)
+            return {
+                "status": "success",
+                "storefront_id": "all",
+                "cleared": result,
+                "message": f"Cleared all multi-store data: {result.get('order_lines_cleared', 0)} order lines, {result.get('traffic_events_cleared', 0)} traffic events, {result.get('batches_cleared', 0)} batches."
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear multi-store data: {str(e)}")
+
 
 @app.get("/", tags=["Root"])
 def root_status(request: Request):

@@ -2,6 +2,7 @@ import json
 import sqlite3
 import threading
 import time
+from typing import Any
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from backend.app.config import settings
@@ -57,6 +58,7 @@ class UserEntity:
     persona_description: str
     password_hash: str
     created_at: str
+    role: str = "customer"
 
 @dataclass(frozen=True)
 class OrderEntity:
@@ -630,6 +632,7 @@ class CatalogRepository:
         persona_description: str,
         password_hash: str,
         created_at: str | None = None,
+        role: str = "customer",
     ) -> UserEntity:
         """Creates a demonstration user with hashed credentials."""
         now = created_at or datetime.now(timezone.utc).isoformat()
@@ -637,9 +640,9 @@ class CatalogRepository:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO users (id, username, display_name, persona_description, password_hash, created_at)
-                VALUES (?, ?, ?, ?, ?, ?);
-            """, (user_id, username, display_name, persona_description, password_hash, now))
+                INSERT INTO users (id, username, display_name, persona_description, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+            """, (user_id, username, display_name, persona_description, password_hash, role, now))
             conn.commit()
             return UserEntity(
                 id=user_id,
@@ -648,6 +651,7 @@ class CatalogRepository:
                 persona_description=persona_description,
                 password_hash=password_hash,
                 created_at=now,
+                role=role,
             )
         finally:
             conn.close()
@@ -668,6 +672,7 @@ class CatalogRepository:
                 persona_description=row["persona_description"],
                 password_hash=row["password_hash"],
                 created_at=row["created_at"],
+                role=row["role"] if "role" in row.keys() else "customer",
             )
         finally:
             conn.close()
@@ -688,6 +693,7 @@ class CatalogRepository:
                 persona_description=row["persona_description"],
                 password_hash=row["password_hash"],
                 created_at=row["created_at"],
+                role=row["role"] if "role" in row.keys() else "customer",
             )
         finally:
             conn.close()
@@ -707,6 +713,7 @@ class CatalogRepository:
                     persona_description=r["persona_description"],
                     password_hash=r["password_hash"],
                     created_at=r["created_at"],
+                    role=r["role"] if "role" in r.keys() else "customer",
                 )
                 for r in rows
             ]
@@ -757,7 +764,7 @@ class CatalogRepository:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT s.session_token, s.user_id, s.created_at, s.expires_at,
-                       u.username, u.display_name, u.persona_description
+                       u.username, u.display_name, u.persona_description, u.role
                 FROM user_sessions s
                 JOIN users u ON s.user_id = u.id
                 WHERE s.session_token = ? AND s.expires_at > ?;
@@ -773,6 +780,7 @@ class CatalogRepository:
                 "username": row["username"],
                 "display_name": row["display_name"],
                 "persona_description": row["persona_description"],
+                "role": row["role"] if "role" in row.keys() else "customer",
             }
         finally:
             conn.close()
@@ -934,5 +942,310 @@ class CatalogRepository:
                     purchased_pids.append(pid)
         return purchased_pids
 
+    # -------------------------------------------------------------------------
+    # MULTI-STORE PROFIT INTELLIGENCE (Step 5.20)
+    # -------------------------------------------------------------------------
+    def record_import_batch(self, batch_data: dict[str, Any]) -> str:
+        """Records an import batch log for multi-store CSV ingestion audit trail, scoped to merchant_id."""
+        import json
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO storefront_import_batches (
+                    id, merchant_id, storefront_id, import_type, filename, schema_version, status,
+                    total_rows, accepted_rows, rejected_rows, errors_json, imported_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (
+                batch_data["id"],
+                batch_data.get("merchant_id", "usr_demo_merchant"),
+                batch_data["storefront_id"],
+                batch_data["import_type"],
+                batch_data.get("filename", "uploaded.csv"),
+                batch_data.get("schema_version", "1.0"),
+                batch_data.get("status", "completed"),
+                batch_data.get("total_rows", 0),
+                batch_data.get("accepted_rows", 0),
+                batch_data.get("rejected_rows", 0),
+                json.dumps(batch_data.get("errors", [])),
+                batch_data.get("imported_at", datetime.now(timezone.utc).isoformat()),
+            ))
+            conn.commit()
+            return batch_data["id"]
+        finally:
+            conn.close()
 
+    def get_import_batches(self, merchant_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Retrieves recent multi-store import batches, optionally scoped to a specific merchant."""
+        import json
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT id, merchant_id, storefront_id, import_type, filename, schema_version, status,
+                       total_rows, accepted_rows, rejected_rows, errors_json, imported_at
+                FROM storefront_import_batches
+                WHERE 1=1
+            """
+            params: list[Any] = []
+            if merchant_id:
+                query += " AND merchant_id = ?"
+                params.append(merchant_id)
+            query += " ORDER BY imported_at DESC LIMIT ?;"
+            params.append(limit)
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            results = []
+            for r in rows:
+                errs = []
+                try:
+                    errs = json.loads(r["errors_json"])
+                except Exception:
+                    pass
+                results.append({
+                    "id": r["id"],
+                    "merchant_id": r["merchant_id"] if "merchant_id" in r.keys() else "usr_demo_merchant",
+                    "storefront_id": r["storefront_id"],
+                    "import_type": r["import_type"],
+                    "filename": r["filename"],
+                    "schema_version": r["schema_version"],
+                    "status": r["status"],
+                    "total_rows": r["total_rows"],
+                    "accepted_rows": r["accepted_rows"],
+                    "rejected_rows": r["rejected_rows"],
+                    "errors": errs,
+                    "imported_at": r["imported_at"],
+                })
+            return results
+        finally:
+            conn.close()
 
+    def insert_storefront_order_lines(
+        self,
+        lines: list[dict[str, Any]],
+        batch_id: str,
+        merchant_id: str = "usr_demo_merchant",
+    ) -> int:
+        """Inserts validated order lines with stable IDs using INSERT OR IGNORE for idempotency."""
+        if not lines:
+            return 0
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            inserted_count = 0
+            for l in lines:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO storefront_order_lines (
+                        id, merchant_id, batch_id, storefront_id, order_id, order_timestamp, order_status,
+                        currency, product_id, quantity, gross_line_revenue_cents,
+                        discount_cents, refund_cents, cogs_cents, attribution_channel
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    l["id"],
+                    l.get("merchant_id", merchant_id),
+                    batch_id,
+                    l["storefront_id"],
+                    l["order_id"],
+                    l["order_timestamp"],
+                    l.get("order_status", "completed"),
+                    l.get("currency", "USD"),
+                    l["product_id"],
+                    l.get("quantity", 1),
+                    l.get("gross_line_revenue_cents", 0),
+                    l.get("discount_cents", 0),
+                    l.get("refund_cents", 0),
+                    l.get("cogs_cents", 0),
+                    l.get("attribution_channel", "unattributed"),
+                ))
+                if cursor.rowcount > 0:
+                    inserted_count += 1
+            conn.commit()
+            return inserted_count
+        finally:
+            conn.close()
+
+    def insert_storefront_traffic_events(
+        self,
+        events: list[dict[str, Any]],
+        batch_id: str,
+        merchant_id: str = "usr_demo_merchant",
+    ) -> int:
+        """Inserts validated traffic events with stable IDs using INSERT OR IGNORE for idempotency."""
+        if not events:
+            return 0
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            inserted_count = 0
+            for e in events:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO storefront_traffic_events (
+                        id, merchant_id, batch_id, storefront_id, event_id, event_timestamp, session_id,
+                        event_type, acquisition_channel, product_id, order_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    e["id"],
+                    e.get("merchant_id", merchant_id),
+                    batch_id,
+                    e["storefront_id"],
+                    e["event_id"],
+                    e["event_timestamp"],
+                    e["session_id"],
+                    e["event_type"],
+                    e.get("acquisition_channel", "direct"),
+                    e.get("product_id", ""),
+                    e.get("order_id", ""),
+                ))
+                if cursor.rowcount > 0:
+                    inserted_count += 1
+            conn.commit()
+            return inserted_count
+        finally:
+            conn.close()
+
+    def get_storefront_order_lines(
+        self,
+        merchant_id: str | None = None,
+        storefront_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        currency: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieves raw order line items with optional merchant and storefront filtering."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM storefront_order_lines WHERE 1=1"
+            params: list[Any] = []
+
+            if merchant_id:
+                query += " AND merchant_id = ?"
+                params.append(merchant_id)
+            if storefront_id:
+                query += " AND storefront_id = ?"
+                params.append(storefront_id)
+            if date_from:
+                query += " AND order_timestamp >= ?"
+                params.append(date_from)
+            if date_to:
+                query += " AND order_timestamp <= ?"
+                params.append(date_to)
+            if currency:
+                query += " AND currency = ?"
+                params.append(currency)
+
+            query += " ORDER BY order_timestamp ASC;"
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "merchant_id": r["merchant_id"] if "merchant_id" in r.keys() else "usr_demo_merchant",
+                    "batch_id": r["batch_id"],
+                    "storefront_id": r["storefront_id"],
+                    "order_id": r["order_id"],
+                    "order_timestamp": r["order_timestamp"],
+                    "order_status": r["order_status"],
+                    "currency": r["currency"],
+                    "product_id": r["product_id"],
+                    "quantity": r["quantity"],
+                    "gross_line_revenue_cents": r["gross_line_revenue_cents"],
+                    "discount_cents": r["discount_cents"],
+                    "refund_cents": r["refund_cents"],
+                    "cogs_cents": r["cogs_cents"],
+                    "attribution_channel": r["attribution_channel"],
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def get_storefront_traffic_events(
+        self,
+        merchant_id: str | None = None,
+        storefront_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieves traffic events with optional merchant and storefront filtering."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM storefront_traffic_events WHERE 1=1"
+            params: list[Any] = []
+
+            if merchant_id:
+                query += " AND merchant_id = ?"
+                params.append(merchant_id)
+            if storefront_id:
+                query += " AND storefront_id = ?"
+                params.append(storefront_id)
+            if date_from:
+                query += " AND event_timestamp >= ?"
+                params.append(date_from)
+            if date_to:
+                query += " AND event_timestamp <= ?"
+                params.append(date_to)
+
+            query += " ORDER BY event_timestamp ASC;"
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "merchant_id": r["merchant_id"] if "merchant_id" in r.keys() else "usr_demo_merchant",
+                    "batch_id": r["batch_id"],
+                    "storefront_id": r["storefront_id"],
+                    "event_id": r["event_id"],
+                    "event_timestamp": r["event_timestamp"],
+                    "session_id": r["session_id"],
+                    "event_type": r["event_type"],
+                    "acquisition_channel": r["acquisition_channel"],
+                    "product_id": r["product_id"],
+                    "order_id": r["order_id"],
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def clear_storefront_data(
+        self,
+        merchant_id: str | None = None,
+        storefront_id: str | None = None,
+    ) -> dict[str, int]:
+        """Clears imported multi-store data, optionally isolated to a single merchant and/or storefront."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            where_sol = "WHERE 1=1"
+            where_ste = "WHERE 1=1"
+            where_bat = "WHERE 1=1"
+            params: list[Any] = []
+
+            if merchant_id:
+                where_sol += " AND merchant_id = ?"
+                where_ste += " AND merchant_id = ?"
+                where_bat += " AND merchant_id = ?"
+                params.append(merchant_id)
+            if storefront_id:
+                where_sol += " AND storefront_id = ?"
+                where_ste += " AND storefront_id = ?"
+                where_bat += " AND storefront_id = ?"
+                params.append(storefront_id)
+
+            cursor.execute(f"DELETE FROM storefront_order_lines {where_sol};", tuple(params))
+            lines_cleared = cursor.rowcount
+            cursor.execute(f"DELETE FROM storefront_traffic_events {where_ste};", tuple(params))
+            traffic_cleared = cursor.rowcount
+            cursor.execute(f"DELETE FROM storefront_import_batches {where_bat};", tuple(params))
+            batches_cleared = cursor.rowcount
+
+            conn.commit()
+            return {
+                "order_lines_cleared": lines_cleared,
+                "traffic_events_cleared": traffic_cleared,
+                "batches_cleared": batches_cleared,
+            }
+        finally:
+            conn.close()

@@ -27,7 +27,9 @@ class TestAccountOrderHistory(unittest.TestCase):
 
     def test_all_five_personas_have_three_itemized_orders(self):
         """Verifies all 5 demo personas have exactly 3 itemized synthetic orders."""
-        for username, token in self.tokens.items():
+        customer_personas = {"demo_gamer", "demo_student", "demo_creator", "demo_traveler", "demo_office"}
+        for username in customer_personas:
+            token = self.tokens[username]
             client = TestClient(app)
             res = client.get("/api/v1/orders", headers={"Authorization": f"Bearer {token}"})
             self.assertEqual(res.status_code, 200, f"Failed fetching orders for {username}")

@@ -1357,8 +1357,69 @@ Automated in `backend/tests/test_pricing_fairness_invariants.py`:
 
 ### 15.5 Future Architecture Roadmap
 Retained for future development milestones:
-1. **Multi-Store Profit Intelligence:** Validated merchant analytics, multi-store comparison, and CSV sales/margin imports.
-2. **Concurrent Inventory-Aware Optimization:** Real-time stock reservation and dynamic scarcity bounding across concurrent sessions.
-3. **Demand & Sell-Through Forecasting:** Predictive replenishment modeling based on aggregated basket co-occurrence and seasonality.
-4. **Expanded Shopper-Intent Intelligence:** First-party behavioral session signals and voluntarily shared consumer preferences.
-5. **Authorized Advertising Integrations:** Google Analytics and Meta Business Conversions API integrations with explicit shopper consent.
+1. **Concurrent Inventory-Aware Optimization:** Real-time stock reservation and dynamic scarcity bounding across concurrent sessions.
+2. **Demand & Sell-Through Forecasting:** Predictive replenishment modeling based on aggregated basket co-occurrence and seasonality.
+3. **Expanded Shopper-Intent Intelligence:** First-party behavioral session signals and voluntarily shared consumer preferences.
+4. **Authorized Advertising Integrations:** Google Analytics and Meta Business Conversions API integrations with explicit shopper consent.
+
+---
+
+## 16. Step 5.20: Multi-Store Profit Intelligence & Comparative Auditing
+
+> **Release Checkpoint:** Step 5.20 Engineering Implementation<br>
+> **Automated Backend Tests:** **250 / 250 tests passing** (0 failures, 0 errors, full discovery suite)<br>
+> **Frontend Production Build:** Built cleanly with 0 type errors (118.98 kB gzip JS, 7.43 kB gzip CSS)<br>
+> **Core Architectural Innovation:** Backend-authoritative CSV ingestion and validation engine, distinct order grouping integrity, strict currency isolation, zero/negative denominator safeguards, observational channel attribution, automated diagnostic detection for uneconomic discounting and refund leakage, multi-tenant merchant role scoping and tenant isolation, idempotent schema migrations, and a complete multi-store analytics UI in the Merchant Console.
+
+### 16.1 Business Motivation & Architecture
+Merchants operating multiple digital storefronts (e.g. flagship tech boutique, lifestyle living store, organic grocery pantry) require comparative intelligence to answer six fundamental questions:
+1. *Which storefront generates the highest net gross profit and strongest gross margin %?*
+2. *Which storefront converts more browsing sessions into completed orders?*
+3. *How much top-line revenue is lost to markdown discount subsidies and customer refunds?*
+4. *Which acquisition channels drive traffic and attributed orders?*
+5. *Where might discounting be uneconomic (e.g. discount spend > 15% with gross margin < 25%)?*
+6. *Which comparisons are reliable vs. limited by missing or small-sample data?*
+
+FairCart AI answers these authoritatively without integrating third-party trackers or leaking customer PII.
+
+### 16.2 Ingestion Engine & Resource Safeguards (`multi_store_analytics.py`)
+- **Dual CSV Ingestion Types:**
+  - *Order-Line Sales:* `order_id`, `product_id`, `gross_line_revenue`, `quantity`, `discount_amount`, `refund_amount`, `cogs_amount`, `attribution_channel`, `currency`, `storefront_id`, `order_timestamp`.
+  - *Traffic & Funnel Events:* `event_id`, `session_id`, `event_type`, `acquisition_channel`, `product_id`, `order_id`, `storefront_id`, `event_timestamp`.
+- **Pre-Flight Validation & Privacy Firewall:**
+  - Strict rejection of PII headers (`FORBIDDEN_PII_KEYWORDS`: customer_email, full_name, credit_card, phone, street, ssn, ip_address).
+  - Resource bounds: 10 MB maximum file size, 20,000 row cap, 1,000 character cell cap.
+  - Flexible timestamp normalization (ISO8601, RFC3339, standard dates) with automatic fallback to UTC now if omitted.
+- **Stable Deterministic Hashing & Idempotency:**
+  - Order lines are hashed deterministically (`sol-<sha256[:16]>`) based on storefront, order ID, product ID, row index, quantity, and gross revenue.
+  - Traffic events are hashed deterministically (`ste-<sha256[:16]>`).
+  - Database insertion uses `INSERT OR IGNORE`, guaranteeing idempotent ingestion where re-uploading identical CSV files never duplicates records or inflates totals.
+
+### 16.3 Mathematical Accounting Guarantees & Safeguards
+- **Distinct Order Grouping Integrity:** An order with 3 distinct product lines produces `distinct_orders = 1`, not 3. Average Order Value (AOV) divides net revenue by unique orders, and conversion rate divides unique orders by unique sessions.
+- **Financial Formulas:**
+  - $\text{Net Revenue} = \text{Gross Line Revenue} - \text{Discount Amount} - \text{Refund Amount}$
+  - $\text{Gross Profit} = \text{Net Revenue} - \text{Applicable COGS}$
+  - $\text{Gross Margin \%} = \frac{\text{Gross Profit}}{\text{Net Revenue}} \times 100$
+- **Denominator Safety:** When discounts and refunds equal or exceed gross merchandise revenue ($\text{Net Revenue} \le \$0.00$), gross margin % returns `0.0%` rather than throwing `ZeroDivisionError`, and emits an authoritative data quality flag (`"Discounts and refunds exceed gross revenue"`).
+- **Currency Isolation:** Transactions in different currencies (USD, EUR, GBP) are strictly segregated by native currency. The engine never mixes amounts across currency boundaries without explicit rates.
+- **Observational Attribution Disclaimer:** Channel attribution metrics (Organic Search, Paid Search, Social Referral, Email, Direct) strictly attach: `"Attributed revenue is observational; does not prove incremental causation."` Merchants are directed to the offline Uplift Evaluation Laboratory to test causal incrementality.
+- **Automated Diagnostic Warnings:**
+  - *Heavy Discounting with Compressed Margin:* Triggered when discounts exceed 15% of gross sales and gross margin is below 25%.
+  - *High Refund Rate:* Triggered when refunds exceed 15% of gross sales.
+  - *Sub-Benchmark Session Conversion:* Triggered when session conversion is below 1.5% with high traffic.
+
+### 16.4 Merchant Console Multi-Store UI (`MultiStoreProfitIntelligence.tsx`)
+Embedded directly into the Merchant Console beneath Step 5.19:
+- **Combined KPI Summary Cards:** Combined Net Revenue, Gross Profit ($), Combined Margin %, Distinct Orders, AOV, Overall Conversion Rate, and Total Promotional Subsidies / Customer Refunds.
+- **Storefront Comparison Cards & Table:** Displays side-by-side performance across active storefronts with color-coded margin badges (green $\ge 40\%$, amber $25-40\%$, red $< 25\%$) and data quality flags.
+- **Acquisition Channel Attribution Matrix:** Observational breakdown of sessions, attributed orders, conversion rates, and gross profits per channel.
+- **Curated Category Profitability Matrix:** Itemizes performance across product categories.
+- **CSV Ingestion Hub:** Interactive tab supporting file drag-and-drop, text pasting, schema documentation, and real-time pre-flight preview validation before persistent database ingestion.
+- **One-Click Demo Seeder & Reset:** Allows evaluators to immediately seed 3 synthetic benchmark storefronts (`store-alpha-tech`, `store-beta-living`, `store-gamma-pantry`) across 5 acquisition channels or clear imported data cleanly.
+- **Audit Batch Trail:** Immutable audit log tracking batch IDs, storefronts, filenames, rows accepted, rows rejected, status, and import timestamps.
+
+### 16.5 Automated Test Verification
+Automated in `backend/tests/test_step520_multi_store_intelligence.py`:
+- 23 targeted unit and integration tests verifying CSV parsing, PII rejection, resource limits, financial formulas, distinct order grouping, zero-revenue safeguards, idempotency, currency isolation, diagnostics, all 6 FastAPI endpoints, security/authorization guardrails (two-tier RBAC, merchant tenant isolation, customer session privilege escalation rejection, storefront ID sanitization, scoped storefront deletion, and production admin token enforcement), and schema migration idempotency.
+- Full test run reports **250 passing backend tests** across the entire repository.
