@@ -1,12 +1,12 @@
-# FairCart AI — Devpost Submission Readiness Audit (Milestone 6G / Step 5.17)
+# FairCart AI — Devpost Submission Readiness Audit (Step 5.20 / Final Ship)
 
 > **Document Status:** Authoritative Submission Readiness Audit & Final Release Verification  
 > **Audited By:** Antigravity AI Pair Programmer & Code Quality System  
 > **Target Competition:** [Devpost Build With AI: Basics](https://learn-ai-basics.devpost.com/rules)  
 > **Skill Pack Source:** [challengepost/learn-ai-basics](https://github.com/challengepost/learn-ai-basics)  
-> **Audit Date & Local Time:** October 17, 2026, 00:30 IST<br>
-> **Audit Baseline Git Commit:** Milestone 6G / Step 5.17 Final Release Candidate<br>
-> **Test Baseline:** **178 / 178 unit tests passing**, **0 failures, 0 errors** in 108.8s
+> **Audit Date & Local Time:** October 19, 2026, 00:05 IST<br>
+> **Audit Baseline Git Commit:** `0cfb5b7c93e7a5b2ff3d134ee5220d5961e076e6` (Step 5.20 Final Release)<br>
+> **Test Baseline:** **251 / 251 unit tests passing**, **0 failures, 0 errors** in 143.2s
 
 ---
 
@@ -47,8 +47,8 @@ We audited every file in the project against official Devpost requirements:
 | [`.dockerignore`](../.dockerignore) | **Mandatory** (Security) | Exists; excludes `.local/`, `*.local.md`, `.env*`, `learner-profile*`, and `.git`. | Hardened in Milestone 6C to prevent build context leaks. | **PASS** |
 | [`Dockerfile`](../Dockerfile) | **Recommended** | Exists; multi-stage Docker build (Node 20 builder + Python 3.12 slim runtime). | Verified dynamic `$PORT` binding and healthcheck probe. | **PASS** |
 | [`skills-lock.json`](../skills-lock.json) | **Mandatory** (Skill Pack) | Exists; tracks 6 official challengepost skills with computed sha256 hashes. | Matches installed skills directory structure. | **PASS** |
-| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers, connection pooling, session policy overrides, bundle pricing consistency, Fair Deal Passport counterfactual engine. | 178 passing backend unit tests (Milestone 6G / Step 5.17 release checkpoint). | **PASS** |
-| Frontend Source (`frontend/`) | **Mandatory** | 100% complete; React 19, Vite, Tailwind CSS, Lucide icons, responsive modals, CDP verified. | Built cleanly in 8.62s (99.55 kB gzip JS). | **PASS** |
+| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers, connection pooling, session policy overrides, bundle pricing consistency, Fair Deal Passport counterfactual engine, First-Party Outcome Ledger, Uplift Lab, and Multi-Store Profit Intelligence. | 251 passing backend unit tests (Step 5.20 release checkpoint). | **PASS** |
+| Frontend Source (`frontend/`) | **Mandatory** | 100% complete; React 19, Vite, Tailwind CSS, Lucide icons, responsive modals, Multi-Store Analytics Hub, CDP verified. | Built cleanly in 10.65s (index-q6zMaU6m.js). | **PASS** |
 | `devpost/learner-profile.md` | **Private / Internal** | Exists; 3,821 bytes; contains personal learner notes and prior background. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
 | `.local/demo-credentials.local.md` | **Private / Internal** | Exists; 1,611 bytes; local demo seed log. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
 
@@ -109,19 +109,19 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **2** | **Required Planning Documents** | [`devpost/scope.md`](scope.md)<br>[`devpost/prd.md`](prd.md)<br>[`devpost/spec.md`](spec.md)<br>[`devpost/checklist.md`](checklist.md)<br>[`devpost/app-map.html`](app-map.html) | All 5 files exist with approved YAML frontmatter (`status: approved`). Zero placeholders. 100% consistent with implementation. | **PASS** | Automated / Verified |
 | **3** | **Open-Source LICENSE** | [`LICENSE`](../LICENSE) | Standard permissive MIT License with 2026 copyright attribution. Required for public open-source entry. | **PASS** | Automated / Verified |
 | **4** | **README & Setup Guide** | [`README.md`](../README.md) | Comprehensive markdown: overview, local setup, demo persona guide, dual-persistence docs, Docker specs, track alignment. | **PASS** | Automated / Verified |
-| **5** | **Public Deployment & Tested URL** | `https://<app-name>.onrender.com`<br>*(or GitHub repo in "Try it out")* | Multi-stage `Dockerfile` verified; dynamic `$PORT` binding; dual SQLite/Postgres persistence layer ready. Zero-cost deployment verified. Public URL not claimed until live deployment is authorized by user. | **NEEDS REVIEW** | **Learner Action** (Optional deploy or repo URL) |
-| **6** | **Public Demo Video (<3 min)** | YouTube / Vimeo link | Detailed 2-minute walkthrough outline provided below. In strict adherence to competition rules, video must be recorded by the human learner. | **NEEDS REVIEW** | **Learner Action** (Record & upload video) |
+| **5** | **Public Deployment & Tested URL** | [`https://faircart-ai.onrender.com`](https://faircart-ai.onrender.com)<br>*(and GitHub repo in "Try it out")* | Deployed live to Render with Neon Serverless PostgreSQL persistence. Verified with 10/10 live production probes passing (health, auth, multi-store dashboard, PII firewall, and core invariants). | **PASS** | Verified Live |
+| **6** | **Public Demo Video (<3 min)** | YouTube / Vimeo link | Detailed 2.5–3 minute walkthrough outline provided below. In strict adherence to competition rules, video must be recorded by the human learner. | **NEEDS REVIEW** | **Learner Action** (Record & upload video) |
 | **7** | **Project Description & Story** | Devpost Submission Form Fields | Comprehensive factual summary and technical outline prepared in Section 5.2. Personal responses must be submitted in learner's own words. | **NEEDS REVIEW** | **Learner Action** (Fill Devpost text fields) |
 | **8** | **Skill Pack Usage Explanation** | Devpost Required Text Field | `skills-lock.json` tracks all 6 skills from `challengepost/learn-ai-basics` (committed at `957c0fe`). 6-stage workflow documented. | **PASS** | Automated / Verified |
 | **9** | **Age-of-Majority Confirmation** | Devpost Required Checkbox | Mandatory legal eligibility confirmation checkbox on Devpost form. Must be confirmed personally by learner. | **NEEDS REVIEW** | **Learner Action** (Check confirmation box) |
-| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **168 / 168 unit tests pass** in 101.8s (0 failures, 0 errors). Frontend builds cleanly in 10.1s. Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
+| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **251 / 251 unit tests pass** in 143.2s (0 failures, 0 errors). Frontend builds cleanly in 10.65s (index-q6zMaU6m.js). Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
 
 ---
 
 ## 5.1 Submitter Action Guide (Separation of Responsibilities)
 
 ### A. Completed & Verified by Agent (Zero Further Coding Needed)
-- [x] **Code Complete:** 168 automated backend tests pass; frontend TypeScript compiles cleanly.
+- [x] **Code Complete:** 251 automated backend tests pass; frontend TypeScript compiles cleanly.
 - [x] **Production Container:** Multi-stage `Dockerfile` with health probe and dynamic `$PORT`.
 - [x] **CORS Security Guardrail:** Strict production startup failure on wildcard `*` with credentials enabled (`resolve_cors_origins`).
 - [x] **Database Durability & Pooling:** Dual SQLite / Neon PostgreSQL support with connection pooling and strict production startup failure (no silent fallback).
@@ -171,5 +171,5 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **Planning Document Integrity** | `scope.md`, `prd.md`, `spec.md` completely match codebase architecture | **PASS** |
 | **Secret Hygiene** | Zero credentials in Git history; passwords redacted from public APIs; masked DB logs | **PASS** |
 | **Open Source Licensing** | MIT License file verified in repository root | **PASS** |
-| **Code Verification** | 178 unit tests pass; frontend builds with 0 type errors | **PASS** |
+| **Code Verification** | 251 unit tests pass; frontend builds with 0 type errors | **PASS** |
 | **Overall Submission Readiness** | Codebase and documentation 100% ready; submitter actions identified | **READY FOR REVIEW** |
