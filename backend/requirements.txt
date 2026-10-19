@@ -13,6 +13,7 @@ scikit-learn==1.9.1
 
 # Security & Authentication
 argon2-cffi==25.1.0
+cryptography==50.0.2
 
 # Database Persistence (PostgreSQL / Neon)
 psycopg[binary]>=3.2.0
