@@ -263,7 +263,6 @@ def on_startup():
             seed_demo_accounts()
         if len(repo.get_storefront_order_lines(merchant_id="usr_demo_merchant")) == 0:
             seed_multi_store_demo_fixtures_internal(repo)
-        TwinInventoryRepository().seed_initial_inventory(storefront_id="primary_storefront")
     except Exception as e:
         print(f"Startup catalog/demo account verification note: {e}")
 
@@ -1279,8 +1278,9 @@ def get_twin_inventory(
     storefront_id: str = "primary_storefront",
     category: str | None = None,
     limit: int = 100,
+    auth: dict = Depends(verify_merchant_access),
 ) -> list[InventoryItem]:
-    """Lists Available-To-Promise (ATP) inventory levels and scarcity shadow prices (lambda_i)."""
+    """Lists Available-To-Promise (ATP) inventory levels and scarcity shadow prices (lambda_i). Pure read; merchant authorized."""
     twin_inv = TwinInventoryRepository()
     return twin_inv.list_inventory(storefront_id=storefront_id, category=category, limit=limit)
 
@@ -1288,10 +1288,33 @@ def get_twin_inventory(
 @app.get("/api/v1/twin/inventory-alerts", response_model=list[InventoryAlert], tags=["Decision Twin"])
 def get_twin_inventory_alerts(
     storefront_id: str = "primary_storefront",
+    auth: dict = Depends(verify_merchant_access),
 ) -> list[InventoryAlert]:
-    """Returns auditable stockout risk, replenishment, and markdown opportunity alerts."""
+    """Returns auditable stockout risk, replenishment, and markdown opportunity alerts. Merchant authorized."""
     twin_inv = TwinInventoryRepository()
     return twin_inv.get_inventory_alerts(storefront_id=storefront_id)
+
+
+@app.post("/api/v1/twin/inventory/seed-demo", tags=["Decision Twin"])
+def seed_demo_inventory_endpoint(
+    storefront_id: str = "demo_storefront",
+    auth: dict = Depends(verify_merchant_admin_access),
+) -> dict[str, Any]:
+    """Explicitly seeds realistic demonstration inventory fixtures for sandbox evaluation. Administrator authorized."""
+    is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
+    if is_prod and not settings.ENABLE_DEMO_INVENTORY_SEEDING:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo inventory seeding is strictly disabled in production. Administrator authorization cannot override ENABLE_DEMO_INVENTORY_SEEDING=False.",
+        )
+    repo = TwinInventoryRepository()
+    count = repo.seed_demo_inventory(storefront_id=storefront_id, force=True)
+    return {
+        "status": "success",
+        "seeded_count": count,
+        "storefront_id": storefront_id,
+        "message": f"Successfully initialized {count} demo SKU inventory records for storefront '{storefront_id}'.",
+    }
 
 
 @app.get("/api/v1/twin/forecasts", response_model=list[DemandForecastRecord], tags=["Decision Twin"])
@@ -1299,19 +1322,40 @@ def get_twin_forecasts(
     storefront_id: str = "primary_storefront",
     horizon_days: int = 14,
     sku: str | None = None,
+    auth: dict = Depends(verify_merchant_access),
 ) -> list[DemandForecastRecord]:
-    """Returns multi-horizon demand forecasts with conformal prediction intervals and accuracy metrics."""
+    """Returns persisted multi-horizon demand forecasts. Pure read; merchant authorized."""
     forecaster = DemandForecaster()
+    records = forecaster.get_forecasts_for_storefront(storefront_id=storefront_id, horizon_days=horizon_days)
     if sku:
-        return [forecaster.generate_forecast(sku=sku, horizon_days=horizon_days, storefront_id=storefront_id)]
-    return forecaster.get_forecasts_for_storefront(storefront_id=storefront_id, horizon_days=horizon_days)
+        return [r for r in records if r.sku == sku]
+    return records
+
+
+@app.post("/api/v1/twin/forecasts/generate", response_model=list[DemandForecastRecord], tags=["Decision Twin"])
+def generate_twin_forecasts(
+    storefront_id: str = "primary_storefront",
+    horizon_days: int = 14,
+    limit: int = 20,
+    auth: dict = Depends(verify_merchant_access),
+) -> list[DemandForecastRecord]:
+    """Explicitly generates and persists multi-horizon demand forecasts for catalog products. Merchant authorized."""
+    forecaster = DemandForecaster()
+    return forecaster.generate_and_save_forecasts(storefront_id=storefront_id, horizon_days=horizon_days, limit=limit)
 
 
 @app.post("/api/v1/twin/decision", tags=["Decision Twin"])
 def evaluate_twin_decision(
     req: DecisionRequest,
+    request: Request,
 ) -> dict[str, Any]:
     """Evaluates decision candidates using continuous Markov intent, scarcity shadow costs, and margin floors."""
+    # Check if caller has authenticated merchant access
+    from backend.app.auth import get_current_user_optional
+    user = get_current_user_optional(request)
+    is_merchant = bool(user and user.get("role") in ("merchant", "admin"))
+    merchant_id = user["user_id"] if is_merchant else "usr_demo_merchant"
+
     optimizer = TwinOptimizer()
     cart_items = [item.model_dump() for item in req.cart_items]
     candidates, chosen, snapshot = optimizer.evaluate_candidates_for_session(
@@ -1324,21 +1368,68 @@ def evaluate_twin_decision(
         margin_floor=req.margin_floor,
         discount_cap=req.discount_cap,
         search_query=req.search_query,
+        merchant_id=merchant_id,
     )
+
+    if is_merchant:
+        # Full diagnostic breakdown for authenticated merchants
+        return {
+            "trace_id": snapshot.trace_id,
+            "intent_state": snapshot.intent_state,
+            "scarcity_lambda": snapshot.scarcity_lambda,
+            "chosen_action": chosen.model_dump() if chosen else None,
+            "candidates_evaluated": [c.model_dump() for c in candidates],
+            "constraints_applied": snapshot.constraints_applied,
+            "redacted_shopper_view": snapshot.redacted_shopper_view,
+        }
+
+    # Public shopper response: strictly scrub internal COGS, margin percentages, and candidate alternatives
     return {
         "trace_id": snapshot.trace_id,
         "intent_state": snapshot.intent_state,
-        "scarcity_lambda": snapshot.scarcity_lambda,
-        "chosen_action": chosen.model_dump() if chosen else None,
-        "candidates_evaluated": [c.model_dump() for c in candidates],
-        "constraints_applied": snapshot.constraints_applied,
+        "chosen_action": {
+            "action_type": chosen.action_type,
+            "product_name": chosen.product_name,
+            "reference_price": chosen.reference_price,
+            "offered_price": chosen.offered_price,
+            "discount_pct": chosen.discount_pct,
+        } if chosen else None,
         "redacted_shopper_view": snapshot.redacted_shopper_view,
     }
 
 
 @app.get("/api/v1/twin/traces/{trace_id}", response_model=DecisionTraceSnapshot, tags=["Decision Twin"])
-def get_twin_trace(trace_id: str) -> DecisionTraceSnapshot:
-    """Retrieves an auditable decision trace snapshot."""
+def get_twin_trace(
+    trace_id: str,
+    auth: dict = Depends(verify_merchant_access),
+) -> DecisionTraceSnapshot:
+    """Retrieves an auditable decision trace snapshot. Tenant isolated; merchant authorized."""
+    import json
+    from backend.app.db.database import get_connection
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT merchant_id, payload_json FROM decision_traces WHERE trace_id = ?", (trace_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Trace '{trace_id}' not found.")
+
+        # Enforce tenant isolation: prevent cross-tenant access and trace guessing
+        if row["merchant_id"] != auth["merchant_id"] and not auth.get("is_admin"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-tenant access forbidden: you cannot inspect another merchant's decision trace.",
+            )
+
+        payload = json.loads(row["payload_json"])
+        return DecisionTraceSnapshot(**payload)
+    finally:
+        conn.close()
+
+
+@app.get("/api/v1/twin/traces/{trace_id}/public", tags=["Decision Twin"])
+def get_public_twin_trace(trace_id: str) -> dict[str, Any]:
+    """Returns the public, shopper-safe transparency representation of a decision trace without internal merchant economics."""
     import json
     from backend.app.db.database import get_connection
     conn = get_connection()
@@ -1347,9 +1438,12 @@ def get_twin_trace(trace_id: str) -> DecisionTraceSnapshot:
         cur.execute("SELECT payload_json FROM decision_traces WHERE trace_id = ?", (trace_id,))
         row = cur.fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail=f"Trace '{trace_id}' not found.")
+            raise HTTPException(status_code=404, detail=f"Decision trace '{trace_id}' not found.")
         payload = json.loads(row["payload_json"])
-        return DecisionTraceSnapshot(**payload)
+        return payload.get("redacted_shopper_view", {
+            "trace_id": trace_id,
+            "margin_protected": True,
+        })
     finally:
         conn.close()
 
@@ -1357,8 +1451,9 @@ def get_twin_trace(trace_id: str) -> DecisionTraceSnapshot:
 @app.post("/api/v1/twin/optimize-batch", response_model=BatchOptimizationResult, tags=["Decision Twin"])
 def optimize_twin_batch(
     req: BatchOptimizationRequest,
+    auth: dict = Depends(verify_merchant_access),
 ) -> BatchOptimizationResult:
-    """Optimizes offer allocations across a batch of concurrent shoppers competing for inventory."""
+    """Optimizes offer allocations across a batch of concurrent shoppers competing for inventory. Merchant authorized."""
     optimizer = TwinOptimizer()
     return optimizer.optimize_batch(req)
 

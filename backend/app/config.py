@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     ADMIN_TOKEN: str | None = None
     SECRET_KEY: str | None = None
     CONNECTOR_VAULT_KEY: str | None = None
+    ENABLE_DEMO_INVENTORY_SEEDING: bool = False
     
     # Database
     DATABASE_PATH: str = str(BASE_DIR / "faircart.db")

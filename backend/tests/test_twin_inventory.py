@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 
+from backend.app.config import settings
 from backend.app.db.database import init_db
 from backend.app.engine.twin_inventory import (
     TwinInventoryRepository,
@@ -229,6 +230,56 @@ class TestTwinInventory(unittest.TestCase):
             crit_idx = severities.index("CRITICAL")
             warn_idx = severities.index("WARNING")
             self.assertLess(crit_idx, warn_idx)
+
+
+    def test_list_inventory_does_not_seed_database(self):
+        """Verifies that list_inventory is strictly read-only and never populates synthetic stock."""
+        items = self.inventory_repo.list_inventory(storefront_id="unseeded_storefront")
+        self.assertEqual(items, [])
+
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM sku_inventory WHERE storefront_id = 'unseeded_storefront'")
+        self.assertEqual(cur.fetchone()[0], 0)
+        conn.close()
+
+    def test_seed_demo_inventory_safety_guard(self):
+        """Verifies that seed_demo_inventory strictly refuses seeding in production when disabled, even with force=True."""
+        orig_env = settings.ENVIRONMENT
+        orig_flag = settings.ENABLE_DEMO_INVENTORY_SEEDING
+        try:
+            settings.ENVIRONMENT = "production"
+            settings.ENABLE_DEMO_INVENTORY_SEEDING = False
+
+            # 1. force=False in production returns 0 and seeds zero rows
+            seeded_disabled = self.inventory_repo.seed_demo_inventory(storefront_id="prod_storefront", force=False)
+            self.assertEqual(seeded_disabled, 0)
+
+            # 2. force=True CANNOT bypass the production disabled guard
+            seeded_forced = self.inventory_repo.seed_demo_inventory(storefront_id="prod_storefront", force=True)
+            self.assertEqual(seeded_forced, 0)
+
+            # Confirm 0 rows written in database
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM sku_inventory WHERE storefront_id = 'prod_storefront'")
+            self.assertEqual(cur.fetchone()[0], 0)
+            conn.close()
+
+            # 3. Only when ENABLE_DEMO_INVENTORY_SEEDING is explicitly True is seeding allowed in production
+            settings.ENABLE_DEMO_INVENTORY_SEEDING = True
+            seeded_enabled = self.inventory_repo.seed_demo_inventory(storefront_id="prod_storefront", force=True)
+            self.assertGreater(seeded_enabled, 0)
+        finally:
+            settings.ENVIRONMENT = orig_env
+            settings.ENABLE_DEMO_INVENTORY_SEEDING = orig_flag
+
+    def test_unmanaged_sku_returns_none(self):
+        """Verifies that querying an unmanaged SKU returns None without mutating the database or fabricating stock."""
+        item = self.inventory_repo.get_inventory_item("nonexistent-item-999")
+        self.assertIsNone(item)
 
 
 if __name__ == "__main__":

@@ -120,6 +120,26 @@ class TestDemandForecasting(unittest.TestCase):
         self.assertIsNotNone(item_fc)
         self.assertAlmostEqual(item_fc.point_forecast, fc.point_forecast, places=2)
 
+    def test_get_forecasts_does_not_seed_database(self):
+        """Verifies that get_forecasts_for_storefront is strictly read-only and never populates records."""
+        retrieved = self.forecaster.get_forecasts_for_storefront(storefront_id="unseeded_forecast_store", horizon_days=14)
+        self.assertEqual(retrieved, [])
+
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM demand_forecasts WHERE storefront_id = 'unseeded_forecast_store'")
+        self.assertEqual(cur.fetchone()[0], 0)
+        conn.close()
+
+    def test_generate_and_save_forecasts_multi_sku(self):
+        """Verifies that generate_and_save_forecasts generates forecasts for catalog items and writes them to DB."""
+        saved = self.forecaster.generate_and_save_forecasts(storefront_id="explicit_fc_store", horizon_days=7)
+        self.assertGreaterEqual(len(saved), 1)
+
+        retrieved = self.forecaster.get_forecasts_for_storefront(storefront_id="explicit_fc_store", horizon_days=7)
+        self.assertEqual(len(retrieved), len(saved))
+
 
 if __name__ == "__main__":
     unittest.main()

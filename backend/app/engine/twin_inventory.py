@@ -155,15 +155,35 @@ class TwinInventoryRepository:
     def _get_connection(self):
         return get_connection(self.db_path, self.database_url)
 
-    def seed_initial_inventory(self, storefront_id: str = "primary_storefront") -> int:
-        """Seeds realistic inventory levels for all catalog products if sku_inventory is unseeded."""
+    def seed_demo_inventory(
+        self,
+        storefront_id: str = "demo_storefront",
+        force: bool = False,
+    ) -> int:
+        """Seeds realistic demonstration inventory profiles for sandbox evaluation.
+
+        Strict Production Safety Guard:
+          In production environments ('production' or 'prod'), seeding is strictly prohibited
+          whenever settings.ENABLE_DEMO_INVENTORY_SEEDING is False.
+          Neither `force=True` nor administrative callers can bypass this production guard.
+          In non-production environments ('development', 'test'), seeding is permitted.
+        """
+        from backend.app.config import settings
+        is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
+        if is_prod and not settings.ENABLE_DEMO_INVENTORY_SEEDING:
+            logger.warning(
+                f"Demo inventory seeding strictly blocked: ENABLE_DEMO_INVENTORY_SEEDING is False in {settings.ENVIRONMENT}. "
+                "Neither force=True nor administrative credentials can override this guard."
+            )
+            return 0
+
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) as cnt FROM sku_inventory WHERE storefront_id = ?", (storefront_id,))
             row = cursor.fetchone()
             count = row["cnt"] if row else 0
-            if count > 0:
+            if count > 0 and not force:
                 return count
 
             # Fetch catalog products
@@ -217,6 +237,10 @@ class TwinInventoryRepository:
             return seeded
         finally:
             conn.close()
+
+    def seed_initial_inventory(self, storefront_id: str = "primary_storefront", force: bool = False) -> int:
+        """Backwards compatibility alias for hermetic test fixtures."""
+        return self.seed_demo_inventory(storefront_id=storefront_id, force=force)
 
     def get_inventory_item(self, sku: str, storefront_id: str = "primary_storefront") -> InventoryItem | None:
         """Fetches the current inventory snapshot and computed ATP for a SKU."""
@@ -284,10 +308,7 @@ class TwinInventoryRepository:
         category: str | None = None,
         limit: int = 100,
     ) -> list[InventoryItem]:
-        """Lists inventory items with ATP and scarcity shadow costs."""
-        # Ensure initial seed exists
-        self.seed_initial_inventory(storefront_id)
-
+        """Lists inventory items with ATP and scarcity shadow costs. Never mutates database."""
         conn = self._get_connection()
         try:
             cursor = conn.cursor()

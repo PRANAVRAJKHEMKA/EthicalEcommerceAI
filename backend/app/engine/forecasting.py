@@ -364,7 +364,7 @@ class DemandForecaster:
         storefront_id: str = "primary_storefront",
         horizon_days: int = 14,
     ) -> list[DemandForecastRecord]:
-        """Retrieves or generates forecasts for the catalog products."""
+        """Retrieves persisted forecasts for catalog products. Pure read; never mutates database."""
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
@@ -374,28 +374,38 @@ class DemandForecaster:
                 ORDER BY sku ASC
             """, (storefront_id, horizon_days))
             rows = cursor.fetchall()
-            if rows and len(rows) >= 10:
-                results = []
-                for r in rows:
-                    results.append(DemandForecastRecord(
-                        sku=r["sku"],
-                        storefront_id=r["storefront_id"],
-                        horizon_days=int(r["horizon_days"]),
-                        forecast_date=r["forecast_date"],
-                        point_forecast=float(r["point_forecast"]),
-                        lower_bound=float(r["lower_bound"]),
-                        upper_bound=float(r["upper_bound"]),
-                        confidence_level=float(r["confidence_level"]),
-                        method=r["method"],
-                        wape=float(r["wape"]),
-                        mase=float(r["mase"]),
-                        forecast_bias=float(r["forecast_bias"]),
-                        generated_at=r["created_at"],
-                    ))
-                return results
+            results = []
+            for r in rows:
+                results.append(DemandForecastRecord(
+                    sku=r["sku"],
+                    storefront_id=r["storefront_id"],
+                    horizon_days=int(r["horizon_days"]),
+                    forecast_date=r["forecast_date"],
+                    point_forecast=float(r["point_forecast"]),
+                    lower_bound=float(r["lower_bound"]),
+                    upper_bound=float(r["upper_bound"]),
+                    confidence_level=float(r["confidence_level"]),
+                    method=r["method"],
+                    wape=float(r["wape"]),
+                    mase=float(r["mase"]),
+                    forecast_bias=float(r["forecast_bias"]),
+                    generated_at=r["created_at"],
+                ))
+            return results
+        finally:
+            conn.close()
 
-            # If empty, generate forecasts for first 20 products
-            cursor.execute("SELECT id FROM products LIMIT 20")
+    def generate_and_save_forecasts(
+        self,
+        storefront_id: str = "primary_storefront",
+        horizon_days: int = 14,
+        limit: int = 20,
+    ) -> list[DemandForecastRecord]:
+        """Explicitly generates and persists predictive forecasts for catalog products."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM products LIMIT ?", (limit,))
             prods = cursor.fetchall()
             generated = []
             for p in prods:

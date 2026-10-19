@@ -76,6 +76,7 @@ class TwinOptimizer:
         discount_cap: float = 0.20,
         storefront_id: str = "primary_storefront",
         search_query: str = "",
+        merchant_id: str = "usr_demo_merchant",
     ) -> tuple[list[DecisionCandidate], DecisionCandidate | None, DecisionTraceSnapshot]:
         """Evaluates all candidate actions for a single shopper session under inventory & margin constraints."""
         intent_state = self.intent_engine.infer_intent_state(
@@ -117,14 +118,18 @@ class TwinOptimizer:
             ref_price = round(int(prod_row["reference_price_cents"]) / 100.0, 2)
             cogs = round(int(prod_row["cogs_cents"]) / 100.0, 2)
 
-        # Fetch inventory & ATP
+        # Fetch inventory & ATP (strictly read-only, never seeds)
         inv_item = self.inventory_repo.get_inventory_item(focus_sku, storefront_id=storefront_id)
-        if not inv_item:
-            self.inventory_repo.seed_initial_inventory(storefront_id=storefront_id)
-            inv_item = self.inventory_repo.get_inventory_item(focus_sku, storefront_id=storefront_id)
-
-        atp = inv_item.atp if inv_item else 20
-        safety_stock = inv_item.safety_stock if inv_item else 10
+        if inv_item:
+            atp = inv_item.atp
+            safety_stock = inv_item.safety_stock
+            inventory_source = "sku_inventory"
+        else:
+            # Fallback to catalog on-hand inventory without fabricating artificial safety stock
+            catalog_stock = int(prod_row["inventory"]) if (prod_row and prod_row["inventory"] is not None) else 0
+            atp = max(0, catalog_stock)
+            safety_stock = 0
+            inventory_source = "catalog_unmanaged"
 
         # Query 14d demand forecast or resolve explicit fallback
         conn = self._get_connection()
@@ -297,6 +302,7 @@ class TwinOptimizer:
                 "forecast_demand_14d": effective_forecast,
                 "forecast_source": forecast_source,
                 "forecast_uncertainty": forecast_uncertainty,
+                "inventory_source": inventory_source,
             },
             redacted_shopper_view={
                 "trace_id": trace_id,
@@ -310,11 +316,11 @@ class TwinOptimizer:
         )
 
         # Persist trace
-        self._persist_trace(snapshot)
+        self._persist_trace(snapshot, merchant_id=merchant_id)
 
         return candidates, chosen_action, snapshot
 
-    def _persist_trace(self, snapshot: DecisionTraceSnapshot) -> None:
+    def _persist_trace(self, snapshot: DecisionTraceSnapshot, merchant_id: str = "usr_demo_merchant") -> None:
         """Persists decision trace to decision_traces table."""
         conn = self._get_connection()
         try:
@@ -330,7 +336,7 @@ class TwinOptimizer:
             """, (
                 snapshot.trace_id,
                 snapshot.session_id,
-                "usr_demo_merchant",
+                merchant_id,
                 snapshot.storefront_id,
                 chosen_act,
                 snapshot.scarcity_lambda,
@@ -351,14 +357,21 @@ class TwinOptimizer:
         margin_floor = request.margin_floor
         discount_cap = request.discount_cap
 
-        # Ensure inventory is seeded
-        self.inventory_repo.seed_initial_inventory(storefront_id=storefront_id)
-
-        # Track shadow allocations per SKU during batch
+        # Track shadow allocations per SKU during batch (strictly read-only; never mutates DB)
         shadow_atp: dict[str, int] = {}
         inv_items = self.inventory_repo.list_inventory(storefront_id=storefront_id, limit=200)
-        for item in inv_items:
-            shadow_atp[item.sku] = item.atp
+        if inv_items:
+            for item in inv_items:
+                shadow_atp[item.sku] = item.atp
+        else:
+            conn = self._get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT id, inventory FROM products")
+                for r in cur.fetchall():
+                    shadow_atp[r["id"]] = max(0, int(r["inventory"]))
+            finally:
+                conn.close()
 
         twin_allocations: list[dict[str, Any]] = []
         greedy_allocations: list[dict[str, Any]] = []
