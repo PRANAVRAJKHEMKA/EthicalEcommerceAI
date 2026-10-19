@@ -60,6 +60,32 @@ class TestDatabasePersistence(unittest.TestCase):
         self.assertNotIn("INSERT OR REPLACE", adapted)
         self.assertIn("ON CONFLICT (id) DO UPDATE", adapted)
 
+    def test_adapt_sql_for_postgres_decision_twin_tables(self):
+        """Verifies INSERT OR REPLACE for Decision Twin tables translates to ON CONFLICT UPDATE."""
+        # 1. sku_inventory
+        sql_inv = "INSERT OR REPLACE INTO sku_inventory (sku, storefront_id) VALUES (?, ?);"
+        adapted_inv = adapt_sql_for_postgres(sql_inv)
+        self.assertNotIn("INSERT OR REPLACE", adapted_inv)
+        self.assertIn("ON CONFLICT (sku, storefront_id) DO UPDATE", adapted_inv)
+
+        # 2. demand_forecasts
+        sql_fc = "INSERT OR REPLACE INTO demand_forecasts (id, sku) VALUES (?, ?);"
+        adapted_fc = adapt_sql_for_postgres(sql_fc)
+        self.assertNotIn("INSERT OR REPLACE", adapted_fc)
+        self.assertIn("ON CONFLICT (id) DO UPDATE", adapted_fc)
+
+        # 3. external_connector_configs
+        sql_conn = "INSERT OR REPLACE INTO external_connector_configs (id, provider) VALUES (?, ?);"
+        adapted_conn = adapt_sql_for_postgres(sql_conn)
+        self.assertNotIn("INSERT OR REPLACE", adapted_conn)
+        self.assertIn("ON CONFLICT (id) DO UPDATE", adapted_conn)
+
+        # 4. decision_traces
+        sql_trc = "INSERT OR REPLACE INTO decision_traces (trace_id, session_id) VALUES (?, ?);"
+        adapted_trc = adapt_sql_for_postgres(sql_trc)
+        self.assertNotIn("INSERT OR REPLACE", adapted_trc)
+        self.assertIn("ON CONFLICT (trace_id) DO UPDATE", adapted_trc)
+
     def test_adapt_sql_for_postgres_insert_ignore(self):
         """Verifies INSERT OR IGNORE translates to ON CONFLICT DO NOTHING."""
         sql = "INSERT OR IGNORE INTO session_events (id, session_id) VALUES (?, ?);"

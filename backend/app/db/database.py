@@ -54,13 +54,71 @@ def adapt_sql_for_postgres(sql: str) -> str:
                 "use_cases = EXCLUDED.use_cases, image_url = EXCLUDED.image_url;"
             )
 
-    # 3. Translate general INSERT OR IGNORE INTO <table>
+    # 3. Translate INSERT OR REPLACE INTO sku_inventory
+    elif "INSERT OR REPLACE INTO sku_inventory" in adapted:
+        adapted = adapted.replace("INSERT OR REPLACE INTO sku_inventory", "INSERT INTO sku_inventory")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + (
+                " ON CONFLICT (sku, storefront_id) DO UPDATE SET "
+                "on_hand = EXCLUDED.on_hand, reserved = EXCLUDED.reserved, "
+                "safety_stock = EXCLUDED.safety_stock, incoming = EXCLUDED.incoming, "
+                "lead_time_days = EXCLUDED.lead_time_days, updated_at = EXCLUDED.updated_at;"
+            )
+
+    # 4. Translate INSERT OR REPLACE INTO demand_forecasts
+    elif "INSERT OR REPLACE INTO demand_forecasts" in adapted:
+        adapted = adapted.replace("INSERT OR REPLACE INTO demand_forecasts", "INSERT INTO demand_forecasts")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + (
+                " ON CONFLICT (id) DO UPDATE SET "
+                "point_forecast = EXCLUDED.point_forecast, lower_bound = EXCLUDED.lower_bound, "
+                "upper_bound = EXCLUDED.upper_bound, confidence_level = EXCLUDED.confidence_level, "
+                "method = EXCLUDED.method, wape = EXCLUDED.wape, mase = EXCLUDED.mase, "
+                "forecast_bias = EXCLUDED.forecast_bias, metrics_json = EXCLUDED.metrics_json, "
+                "created_at = EXCLUDED.created_at;"
+            )
+
+    # 5. Translate INSERT OR REPLACE INTO external_connector_configs
+    elif "INSERT OR REPLACE INTO external_connector_configs" in adapted:
+        adapted = adapted.replace("INSERT OR REPLACE INTO external_connector_configs", "INSERT INTO external_connector_configs")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + (
+                " ON CONFLICT (id) DO UPDATE SET "
+                "status = EXCLUDED.status, masked_account_id = EXCLUDED.masked_account_id, "
+                "encrypted_credentials = EXCLUDED.encrypted_credentials, settings_json = EXCLUDED.settings_json, "
+                "last_sync_at = EXCLUDED.last_sync_at, audit_log_json = EXCLUDED.audit_log_json, "
+                "updated_at = EXCLUDED.updated_at;"
+            )
+
+    # 6. Translate INSERT OR REPLACE INTO decision_traces
+    elif "INSERT OR REPLACE INTO decision_traces" in adapted:
+        adapted = adapted.replace("INSERT OR REPLACE INTO decision_traces", "INSERT INTO decision_traces")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + (
+                " ON CONFLICT (trace_id) DO UPDATE SET "
+                "chosen_action = EXCLUDED.chosen_action, scarcity_lambda = EXCLUDED.scarcity_lambda, "
+                "net_margin = EXCLUDED.net_margin, margin_floor_passed = EXCLUDED.margin_floor_passed, "
+                "payload_json = EXCLUDED.payload_json, created_at = EXCLUDED.created_at;"
+            )
+
+    # 7. Translate INSERT OR REPLACE INTO storefront_import_batches
+    elif "INSERT OR REPLACE INTO storefront_import_batches" in adapted:
+        adapted = adapted.replace("INSERT OR REPLACE INTO storefront_import_batches", "INSERT INTO storefront_import_batches")
+        if "ON CONFLICT" not in adapted:
+            adapted = re.sub(r";\s*$", "", adapted.strip()) + (
+                " ON CONFLICT (id) DO UPDATE SET "
+                "status = EXCLUDED.status, total_rows = EXCLUDED.total_rows, "
+                "accepted_rows = EXCLUDED.accepted_rows, rejected_rows = EXCLUDED.rejected_rows, "
+                "errors_json = EXCLUDED.errors_json, imported_at = EXCLUDED.imported_at;"
+            )
+
+    # 8. Translate general INSERT OR IGNORE INTO <table>
     elif "INSERT OR IGNORE INTO" in adapted:
         adapted = adapted.replace("INSERT OR IGNORE INTO", "INSERT INTO")
         if "ON CONFLICT" not in adapted:
             adapted = re.sub(r";\s*$", "", adapted.strip()) + " ON CONFLICT DO NOTHING;"
 
-    # 4. Translate SQLite datetime('now') to PostgreSQL CURRENT_TIMESTAMP
+    # 9. Translate SQLite datetime('now') to PostgreSQL CURRENT_TIMESTAMP
     adapted = adapted.replace("datetime('now')", "CURRENT_TIMESTAMP")
 
     # 5. Parameter placeholders: SQLite ? -> PostgreSQL %s
@@ -593,6 +651,82 @@ def init_db(
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_session ON storefront_traffic_events(session_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_channel ON storefront_traffic_events(acquisition_channel);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_ste_event_type ON storefront_traffic_events(event_type);")
+
+        # Decision Twin: SKU Inventory & ATP Tracking
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sku_inventory (
+                sku TEXT NOT NULL,
+                storefront_id TEXT NOT NULL DEFAULT 'primary_storefront',
+                on_hand INTEGER NOT NULL DEFAULT 50 CHECK (on_hand >= 0),
+                reserved INTEGER NOT NULL DEFAULT 0 CHECK (reserved >= 0),
+                safety_stock INTEGER NOT NULL DEFAULT 10 CHECK (safety_stock >= 0),
+                incoming INTEGER NOT NULL DEFAULT 0 CHECK (incoming >= 0),
+                lead_time_days INTEGER NOT NULL DEFAULT 7 CHECK (lead_time_days >= 1),
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (sku, storefront_id)
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_inventory_storefront ON sku_inventory(storefront_id);")
+
+        # Decision Twin: Multi-Horizon Predictive Demand Forecasts
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS demand_forecasts (
+                id TEXT PRIMARY KEY,
+                sku TEXT NOT NULL,
+                storefront_id TEXT NOT NULL DEFAULT 'primary_storefront',
+                horizon_days INTEGER NOT NULL,
+                forecast_date TEXT NOT NULL,
+                point_forecast REAL NOT NULL,
+                lower_bound REAL NOT NULL,
+                upper_bound REAL NOT NULL,
+                confidence_level REAL NOT NULL DEFAULT 0.95,
+                method TEXT NOT NULL,
+                wape REAL NOT NULL DEFAULT 0.0,
+                mase REAL NOT NULL DEFAULT 0.0,
+                forecast_bias REAL NOT NULL DEFAULT 0.0,
+                metrics_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_forecast_sku ON demand_forecasts(sku);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_forecast_store_horizon ON demand_forecasts(storefront_id, horizon_days);")
+
+        # Decision Twin: External Analytics Connector Configurations (GA4 / Shopify)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS external_connector_configs (
+                id TEXT PRIMARY KEY,
+                merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant',
+                provider TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'unconfigured',
+                masked_account_id TEXT,
+                encrypted_credentials TEXT NOT NULL DEFAULT '',
+                settings_json TEXT NOT NULL DEFAULT '{}',
+                last_sync_at TEXT,
+                audit_log_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_connector_merchant_provider ON external_connector_configs(merchant_id, provider);")
+
+        # Decision Twin: Traceable Decision Audit Log
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS decision_traces (
+                trace_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                merchant_id TEXT NOT NULL DEFAULT 'usr_demo_merchant',
+                storefront_id TEXT NOT NULL DEFAULT 'primary_storefront',
+                chosen_action TEXT NOT NULL,
+                scarcity_lambda REAL NOT NULL DEFAULT 0.0,
+                net_margin REAL NOT NULL,
+                margin_floor_passed BOOLEAN NOT NULL DEFAULT TRUE,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_traces_session ON decision_traces(session_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_traces_merchant ON decision_traces(merchant_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_traces_created ON decision_traces(created_at);")
 
         conn.commit()
     finally:

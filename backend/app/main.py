@@ -3,6 +3,7 @@ import re
 import logging
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Header, Request, Depends, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +46,24 @@ from backend.app.models.schemas import (
     CSVValidationResponse,
     MultiStoreProfitResponse,
 )
+from backend.app.models.decision_twin_schemas import (
+    InventoryItem,
+    DemandForecastRecord,
+    InventoryAlert,
+    ShopperIntentState,
+    DecisionCandidate,
+    DecisionTraceSnapshot,
+    BatchShopperSession,
+    BatchOptimizationRequest,
+    BatchOptimizationResult,
+    ExternalConnectorConfig,
+    ConnectorConfigureRequest,
+    ConnectorSyncResult,
+)
+from backend.app.engine.twin_inventory import TwinInventoryRepository
+from backend.app.engine.forecasting import DemandForecaster
+from backend.app.engine.twin_optimizer import TwinOptimizer
+from backend.app.engine.connectors.service import ConnectorService
 from backend.app.engine.simulator import EconomicSimulator
 from backend.app.engine.uplift import run_uplift_evaluation, UpliftDatasetSchemaError
 from backend.app.engine.multi_store_analytics import (
@@ -244,6 +263,7 @@ def on_startup():
             seed_demo_accounts()
         if len(repo.get_storefront_order_lines(merchant_id="usr_demo_merchant")) == 0:
             seed_multi_store_demo_fixtures_internal(repo)
+        TwinInventoryRepository().seed_initial_inventory(storefront_id="primary_storefront")
     except Exception as e:
         print(f"Startup catalog/demo account verification note: {e}")
 
@@ -1248,6 +1268,153 @@ def clear_multi_store_data(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear multi-store data: {str(e)}")
+
+
+# ==============================================================================
+# Decision Twin: Predictive, Inventory-Aware, Intent-Aware Decision Engine
+# ==============================================================================
+
+@app.get("/api/v1/twin/inventory", response_model=list[InventoryItem], tags=["Decision Twin"])
+def get_twin_inventory(
+    storefront_id: str = "primary_storefront",
+    category: str | None = None,
+    limit: int = 100,
+) -> list[InventoryItem]:
+    """Lists Available-To-Promise (ATP) inventory levels and scarcity shadow prices (lambda_i)."""
+    twin_inv = TwinInventoryRepository()
+    return twin_inv.list_inventory(storefront_id=storefront_id, category=category, limit=limit)
+
+
+@app.get("/api/v1/twin/inventory-alerts", response_model=list[InventoryAlert], tags=["Decision Twin"])
+def get_twin_inventory_alerts(
+    storefront_id: str = "primary_storefront",
+) -> list[InventoryAlert]:
+    """Returns auditable stockout risk, replenishment, and markdown opportunity alerts."""
+    twin_inv = TwinInventoryRepository()
+    return twin_inv.get_inventory_alerts(storefront_id=storefront_id)
+
+
+@app.get("/api/v1/twin/forecasts", response_model=list[DemandForecastRecord], tags=["Decision Twin"])
+def get_twin_forecasts(
+    storefront_id: str = "primary_storefront",
+    horizon_days: int = 14,
+    sku: str | None = None,
+) -> list[DemandForecastRecord]:
+    """Returns multi-horizon demand forecasts with conformal prediction intervals and accuracy metrics."""
+    forecaster = DemandForecaster()
+    if sku:
+        return [forecaster.generate_forecast(sku=sku, horizon_days=horizon_days, storefront_id=storefront_id)]
+    return forecaster.get_forecasts_for_storefront(storefront_id=storefront_id, horizon_days=horizon_days)
+
+
+@app.post("/api/v1/twin/decision", tags=["Decision Twin"])
+def evaluate_twin_decision(
+    req: DecisionRequest,
+) -> dict[str, Any]:
+    """Evaluates decision candidates using continuous Markov intent, scarcity shadow costs, and margin floors."""
+    optimizer = TwinOptimizer()
+    cart_items = [item.model_dump() for item in req.cart_items]
+    candidates, chosen, snapshot = optimizer.evaluate_candidates_for_session(
+        session_id=req.session_id,
+        cart_items=cart_items,
+        viewed_product_ids=req.viewed_product_ids,
+        hovered_product_ids=req.hovered_product_ids,
+        historical_order_ids=req.historical_order_product_ids,
+        dwell_time_seconds=req.dwell_time_seconds,
+        margin_floor=req.margin_floor,
+        discount_cap=req.discount_cap,
+        search_query=req.search_query,
+    )
+    return {
+        "trace_id": snapshot.trace_id,
+        "intent_state": snapshot.intent_state,
+        "scarcity_lambda": snapshot.scarcity_lambda,
+        "chosen_action": chosen.model_dump() if chosen else None,
+        "candidates_evaluated": [c.model_dump() for c in candidates],
+        "constraints_applied": snapshot.constraints_applied,
+        "redacted_shopper_view": snapshot.redacted_shopper_view,
+    }
+
+
+@app.get("/api/v1/twin/traces/{trace_id}", response_model=DecisionTraceSnapshot, tags=["Decision Twin"])
+def get_twin_trace(trace_id: str) -> DecisionTraceSnapshot:
+    """Retrieves an auditable decision trace snapshot."""
+    import json
+    from backend.app.db.database import get_connection
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT payload_json FROM decision_traces WHERE trace_id = ?", (trace_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Trace '{trace_id}' not found.")
+        payload = json.loads(row["payload_json"])
+        return DecisionTraceSnapshot(**payload)
+    finally:
+        conn.close()
+
+
+@app.post("/api/v1/twin/optimize-batch", response_model=BatchOptimizationResult, tags=["Decision Twin"])
+def optimize_twin_batch(
+    req: BatchOptimizationRequest,
+) -> BatchOptimizationResult:
+    """Optimizes offer allocations across a batch of concurrent shoppers competing for inventory."""
+    optimizer = TwinOptimizer()
+    return optimizer.optimize_batch(req)
+
+
+@app.get("/api/v1/twin/connectors", response_model=list[ExternalConnectorConfig], tags=["Analytics Connectors"])
+def list_twin_connectors(
+    auth: dict = Depends(verify_merchant_access),
+) -> list[ExternalConnectorConfig]:
+    """Lists external analytics connectors and connection health."""
+    svc = ConnectorService()
+    return svc.list_connectors(merchant_id=auth["merchant_id"])
+
+
+@app.post("/api/v1/twin/connectors/configure", response_model=ExternalConnectorConfig, tags=["Analytics Connectors"])
+def configure_twin_connector(
+    req: ConnectorConfigureRequest,
+    auth: dict = Depends(verify_merchant_access),
+) -> ExternalConnectorConfig:
+    """Configures and encrypts credentials for an external analytics connector."""
+    svc = ConnectorService()
+    req.merchant_id = auth["merchant_id"]
+    try:
+        return svc.configure_connector(req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/v1/twin/connectors/{provider}/sync", response_model=ConnectorSyncResult, tags=["Analytics Connectors"])
+def sync_twin_connector(
+    provider: str,
+    storefront_id: str = "primary_storefront",
+    auth: dict = Depends(verify_merchant_access),
+) -> ConnectorSyncResult:
+    """Executes a synchronization cycle for an authorized analytics connector."""
+    svc = ConnectorService()
+    return svc.sync_connector(
+        provider=provider,
+        storefront_id=storefront_id,
+        merchant_id=auth["merchant_id"],
+    )
+
+
+@app.delete("/api/v1/twin/connectors/{provider}", tags=["Analytics Connectors"])
+def disconnect_twin_connector(
+    provider: str,
+    auth: dict = Depends(verify_merchant_access),
+) -> dict[str, Any]:
+    """Disconnects an external connector and deletes encrypted credentials."""
+    svc = ConnectorService()
+    deleted = svc.disconnect_connector(provider=provider, merchant_id=auth["merchant_id"])
+    return {
+        "status": "success",
+        "provider": provider,
+        "disconnected": deleted,
+        "message": f"Connector '{provider}' has been disconnected and credentials securely removed.",
+    }
 
 
 @app.get("/", tags=["Root"])

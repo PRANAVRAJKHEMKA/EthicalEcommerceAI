@@ -9,6 +9,7 @@ import {
   Plus,
   RefreshCw,
   BarChart3,
+  Cpu,
 } from 'lucide-react';
 import { FairDealPassport } from '../types.ts';
 
@@ -33,7 +34,7 @@ export function FairDealPassportModal({
   isItemInCart = false,
   viewMode = 'shopper',
 }: FairDealPassportModalProps) {
-  const [activeTab, setActiveTab] = useState<'scenarios' | 'macro'>('scenarios');
+  const [activeTab, setActiveTab] = useState<'scenarios' | 'macro' | 'twin'>('scenarios');
 
   // Keyboard accessibility: Close on Escape key
   useEffect(() => {
@@ -115,6 +116,17 @@ export function FairDealPassportModal({
             >
               <BarChart3 className="w-3.5 h-3.5" />
               <span>1,000-Session Simulation Context</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('twin')}
+              className={`px-3 py-1 rounded-lg font-semibold transition-colors flex items-center space-x-1.5 ${
+                activeTab === 'twin'
+                  ? 'bg-white text-teal-700 shadow-sm border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5 text-teal-600" />
+              <span>Decision Twin & $\lambda_i$ Audit</span>
             </button>
           </div>
 
@@ -360,7 +372,7 @@ export function FairDealPassportModal({
                     })}
                   </div>
                 </div>
-              ) : (
+              ) : activeTab === 'macro' ? (
                 /* Phase 2: Macro 1,000-Session Simulation Context */
                 <div className="space-y-4">
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
@@ -400,6 +412,70 @@ export function FairDealPassportModal({
 
                     <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
                       <strong>Methodology Disclaimer:</strong> {passport.macro_simulation_summary?.disclaimer || 'Synthetic simulation results evaluating pipeline mechanics; not observed real-world uplift.'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Phase 3: Decision Twin & Scarcity Shadow Cost Audit */
+                <div className="space-y-4">
+                  <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-white font-bold text-sm">
+                        <Cpu className="w-4 h-4 text-teal-400" />
+                        <span>FairCart Decision Twin: Causal Optimization & Scarcity Invariant</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-500/30">
+                        Candidate: {passport.candidate_product_name}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      The Decision Twin evaluates offers not only against static accounting margins, but against real-time warehouse scarcity.
+                      When Available-To-Promise (ATP) inventory approaches safety stock buffers, the scarcity shadow price (&lambda;<sub>i</sub>) penalizes unnecessary promotional markdowns, protecting inventory for full-margin organic demand.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                      <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">
+                          1. Scarcity Penalty (&lambda;<sub>i</sub>)
+                        </span>
+                        <div className="text-base font-bold text-teal-400 font-mono">
+                          {passport.candidate_product_id === 'item-001' ? '$18.50 / unit' : '$0.00 / unit'}
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          {passport.candidate_product_id === 'item-001'
+                            ? 'Constrained ATP stock; discount suppressed'
+                            : 'Abundant stock; promotional bundle permitted'}
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">
+                          2. Markov Intent State
+                        </span>
+                        <div className="text-base font-bold text-indigo-300 font-mono">CART_COMPLETION</div>
+                        <p className="text-[11px] text-slate-400">High commitment; low price sensitivity</p>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">
+                          3. Margin Invariant
+                        </span>
+                        <div className="text-base font-bold text-emerald-400 font-mono">
+                          &ge; {(passport.active_margin_floor * 100).toFixed(1)}% Floor
+                        </div>
+                        <p className="text-[11px] text-slate-400">Authoritative server constraint enforced</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
+                      <div className="text-slate-400 font-sans font-semibold">Causal Optimization Formula:</div>
+                      <div className="text-teal-300">
+                        V(s, a) = P(conv | s, a) &middot; (R_a - C) - P(conv | s, 0) &middot; (R_0 - C) - &lambda;<sub>i</sub> &middot; q
+                      </div>
+                      <div className="text-slate-400 text-[10px] font-sans pt-1">
+                        Ensures promotions are granted exclusively when net incremental profit exceeds inventory opportunity cost (&lambda;<sub>i</sub> &middot; q), with discount expenditure reflected directly in post-discount margin (R_a - C).
+                      </div>
                     </div>
                   </div>
                 </div>

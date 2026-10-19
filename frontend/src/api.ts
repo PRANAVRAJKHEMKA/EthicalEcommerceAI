@@ -27,6 +27,15 @@ import {
   CSVValidationResponse,
   MultiStoreProfitResponse,
   ImportBatchRecord,
+  InventoryItem,
+  DemandForecastRecord,
+  InventoryAlert,
+  DecisionTraceSnapshot,
+  BatchOptimizationRequest,
+  BatchOptimizationResult,
+  ExternalConnectorConfig,
+  ConnectorConfigureRequest,
+  ConnectorSyncResult,
 } from './types.ts';
 
 // Configurable API base url supporting environment override or relative URL for unified deployment
@@ -649,6 +658,152 @@ export async function clearMultiStoreData(storefrontId?: string): Promise<{
       if (err.detail) msg = err.detail;
     } catch {}
     throw new Error(msg);
+  }
+  return res.json();
+}
+
+// ==============================================================================
+// Decision Twin API Client
+// ==============================================================================
+
+export async function fetchTwinInventory(storefrontId: string = 'primary_storefront', category?: string): Promise<InventoryItem[]> {
+  const params = new URLSearchParams({ storefront_id: storefrontId });
+  if (category && category !== 'all') {
+    params.set('category', category);
+  }
+  const res = await fetch(`${API_BASE}/api/v1/twin/inventory?${params.toString()}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch inventory snapshots (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchTwinInventoryAlerts(storefrontId: string = 'primary_storefront'): Promise<InventoryAlert[]> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/inventory-alerts?storefront_id=${encodeURIComponent(storefrontId)}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch inventory alerts (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchTwinForecasts(storefrontId: string = 'primary_storefront', horizonDays: number = 14, sku?: string): Promise<DemandForecastRecord[]> {
+  const params = new URLSearchParams({
+    storefront_id: storefrontId,
+    horizon_days: String(horizonDays),
+  });
+  if (sku) {
+    params.set('sku', sku);
+  }
+  const res = await fetch(`${API_BASE}/api/v1/twin/forecasts?${params.toString()}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch demand forecasts (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function evaluateTwinDecision(req: DecisionRequest): Promise<{
+  trace_id: string;
+  intent_state: string;
+  scarcity_lambda: number;
+  chosen_action: unknown;
+  candidates_evaluated: unknown[];
+  constraints_applied: Record<string, unknown>;
+  redacted_shopper_view: Record<string, unknown>;
+}> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/decision`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to evaluate decision twin (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchTwinTrace(traceId: string): Promise<DecisionTraceSnapshot> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/traces/${encodeURIComponent(traceId)}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch decision trace ${traceId} (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function runBatchOptimization(req: BatchOptimizationRequest): Promise<BatchOptimizationResult> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/optimize-batch`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    throw new Error(`Batch optimization failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchConnectors(): Promise<ExternalConnectorConfig[]> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/connectors`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch external connectors (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function configureConnector(req: ConnectorConfigureRequest): Promise<ExternalConnectorConfig> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/connectors/configure`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    let msg = `Failed to configure connector (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) msg = err.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function syncConnector(provider: string, storefrontId: string = 'primary_storefront'): Promise<ConnectorSyncResult> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/connectors/${encodeURIComponent(provider)}/sync?storefront_id=${encodeURIComponent(storefrontId)}`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to sync connector ${provider} (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function disconnectConnector(provider: string): Promise<{ status: string; disconnected: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/twin/connectors/${encodeURIComponent(provider)}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to disconnect connector ${provider} (${res.status})`);
   }
   return res.json();
 }

@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
     ADMIN_TOKEN: str | None = None
+    SECRET_KEY: str | None = None
+    CONNECTOR_VAULT_KEY: str | None = None
     
     # Database
     DATABASE_PATH: str = str(BASE_DIR / "faircart.db")

@@ -38,6 +38,7 @@ import {
 import { MerchantDealPassportInspector } from '../components/MerchantDealPassportInspector.tsx';
 import { TransactionOutcomeLedger } from '../components/TransactionOutcomeLedger.tsx';
 import { MultiStoreProfitIntelligence } from '../components/MultiStoreProfitIntelligence.tsx';
+import { DecisionTwinConsole } from '../components/DecisionTwinConsole.tsx';
 
 interface MerchantViewProps {
   products: Product[];
@@ -578,6 +579,11 @@ export function MerchantView({ products, health, sessionPolicy, onPolicyChange }
       {/* STEP 5.20: MULTI-STORE PROFIT INTELLIGENCE */}
       {/* ========================================================================= */}
       <MultiStoreProfitIntelligence />
+
+      {/* ========================================================================= */}
+      {/* DECISION TWIN: PREDICTIVE INVENTORY & SCARCITY-AWARE DECISION ENGINE */}
+      {/* ========================================================================= */}
+      <DecisionTwinConsole />
 
       {/* ========================================================================= */}
       {/* MILESTONE 5: THREE-POLICY ECONOMIC SIMULATION COMPARATOR */}

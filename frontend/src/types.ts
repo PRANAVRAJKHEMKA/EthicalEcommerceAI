@@ -624,3 +624,163 @@ export interface ImportBatchRecord {
   errors: CSVValidationIssue[];
   imported_at: string;
 }
+
+// ==============================================================================
+// Decision Twin TypeScript Interfaces
+// ==============================================================================
+
+export interface InventoryItem {
+  sku: string;
+  product_name: string;
+  category: string;
+  storefront_id: string;
+  on_hand: number;
+  reserved: number;
+  safety_stock: number;
+  incoming: number;
+  lead_time_days: number;
+  atp: number;
+  scarcity_lambda: number;
+  stock_status: 'HEALTHY' | 'LOW_STOCK' | 'CRITICAL_STOCKOUT_RISK' | 'OVERSTOCKED' | 'OUT_OF_STOCK';
+  updated_at: string;
+}
+
+export interface DemandForecastRecord {
+  sku: string;
+  storefront_id: string;
+  horizon_days: number;
+  forecast_date: string;
+  point_forecast: number;
+  lower_bound: number;
+  upper_bound: number;
+  confidence_level: number;
+  method: string;
+  wape: number;
+  mase: number;
+  forecast_bias: number;
+  generated_at: string;
+}
+
+export interface InventoryAlert {
+  alert_id: string;
+  sku: string;
+  product_name: string;
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  alert_type: 'STOCKOUT_RISK' | 'EXCESS_INVENTORY' | 'REPLENISHMENT_RECOMMENDED' | 'MARKDOWN_CANDIDATE';
+  description: string;
+  suggested_action: string;
+  days_of_supply_remaining: number;
+  created_at: string;
+}
+
+export interface ShopperIntentState {
+  session_id: string;
+  current_state: 'DISCOVERY' | 'PRODUCT_COMPARISON' | 'PURCHASE_CONSIDERATION' | 'CART_COMPLETION' | 'REPLENISHMENT';
+  state_probabilities: Record<string, number>;
+  intent_score: number;
+  decayed_dwell_seconds: number;
+  transition_entropy: number;
+  top_category_affinity: string;
+  price_sensitivity_estimate: number;
+}
+
+export interface DecisionCandidate {
+  action_type: 'NO_OFFER' | 'BUNDLE_DISCOUNT' | 'ITEM_DISCOUNT' | 'ALTERNATIVE_SUBSTITUTE';
+  candidate_id: string;
+  product_name: string;
+  reference_price: number;
+  offered_price: number;
+  discount_pct: number;
+  cogs: number;
+  gross_margin_pct: number;
+  expected_conversion: number;
+  scarcity_penalty: number;
+  net_expected_profit: number;
+  margin_floor_passed: boolean;
+  rejection_reason?: string | null;
+}
+
+export interface DecisionTraceSnapshot {
+  trace_id: string;
+  timestamp: string;
+  session_id: string;
+  storefront_id: string;
+  intent_state: string;
+  candidates_evaluated: DecisionCandidate[];
+  chosen_action: DecisionCandidate | null;
+  scarcity_lambda: number;
+  utility_formula: string;
+  constraints_applied: Record<string, unknown>;
+  redacted_shopper_view: Record<string, unknown>;
+}
+
+export interface BatchShopperSession {
+  session_id: string;
+  user_id?: string | null;
+  cart_items?: Array<{ product_id: string; quantity: number }>;
+  shopping_context?: string;
+  viewed_product_ids?: string[];
+  dwell_time_seconds?: number;
+}
+
+export interface BatchOptimizationRequest {
+  sessions: BatchShopperSession[];
+  storefront_id?: string;
+  margin_floor?: number;
+  discount_cap?: number;
+}
+
+export interface BatchAllocationRecord {
+  session_id: string;
+  action: string;
+  product_name: string;
+  price: number;
+  discount_pct: number;
+  scarcity_lambda: number;
+  expected_profit: number;
+}
+
+export interface BatchOptimizationResult {
+  total_sessions_evaluated: number;
+  inventory_constrained_skus: string[];
+  allocations: BatchAllocationRecord[];
+  aggregate_projected_profit: number;
+  baseline_greedy_profit: number;
+  projected_profit_lift_pct: number;
+  inventory_saved_units: number;
+  stockout_prevention_rate: number;
+  execution_latency_ms: number;
+  disclaimer: string;
+}
+
+export interface ExternalConnectorConfig {
+  provider: 'google_analytics_4' | 'shopify' | string;
+  merchant_id: string;
+  status: 'unconfigured' | 'connected' | 'error';
+  masked_account_id?: string | null;
+  last_sync_at?: string | null;
+  sync_frequency_hours: number;
+  read_only_scopes: string[];
+  audit_log: Array<{
+    timestamp: string;
+    action: string;
+    status?: string;
+    records?: number;
+    details?: string;
+    message?: string;
+  }>;
+}
+
+export interface ConnectorConfigureRequest {
+  provider: string;
+  credentials: Record<string, string>;
+  merchant_id?: string;
+}
+
+export interface ConnectorSyncResult {
+  provider: string;
+  status: string;
+  records_ingested: number;
+  synced_at: string;
+  details: string;
+}
