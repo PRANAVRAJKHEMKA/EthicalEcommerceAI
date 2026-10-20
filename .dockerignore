@@ -23,3 +23,6 @@ agent/
 devpost/learner-profile.md
 devpost/learner-profile*
 
+
+# Generated media is not required in the production container
+/artifacts/

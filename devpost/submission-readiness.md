@@ -1,12 +1,14 @@
 # FairCart AI — Devpost Submission Readiness Audit (Step 5.20 / Final Ship)
 
-> **Document Status:** Authoritative Submission Readiness Audit & Final Release Verification  
+> **Document Status:** Historical Step 5.20 audit with supplementary local verification
 > **Audited By:** Antigravity AI Pair Programmer & Code Quality System  
 > **Target Competition:** [Devpost Build With AI: Basics](https://learn-ai-basics.devpost.com/rules)  
 > **Skill Pack Source:** [challengepost/learn-ai-basics](https://github.com/challengepost/learn-ai-basics)  
-> **Audit Date & Local Time:** October 19, 2026, 00:05 IST<br>
+> **Original Audit Date & Local Time:** October 19, 2026, 00:05 IST<br>
+> **Supplementary local verification date:** October 21, 2026<br>
 > **Audit Baseline Git Commit:** `0cfb5b7c93e7a5b2ff3d134ee5220d5961e076e6` (Step 5.20 Final Release)<br>
-> **Test Baseline:** **251 / 251 unit tests passing**, **0 failures, 0 errors** in 143.2s
+> **Historical Test Baseline (Step 5.20 release):** **251 / 251 unit tests passed**, **0 failures, 0 errors** in 143.2s.
+> **Supplementary local verification (October 21, 2026):** **311 tests ran, all passed**, **0 failures, 0 errors** in 50.095s. `npm run build` also succeeded in 3.38s. Vite emitted a bundle-size advisory for a JavaScript chunk above 500 kB; the build itself succeeded.
 
 ---
 
@@ -47,8 +49,8 @@ We audited every file in the project against official Devpost requirements:
 | [`.dockerignore`](../.dockerignore) | **Mandatory** (Security) | Exists; excludes `.local/`, `*.local.md`, `.env*`, `learner-profile*`, and `.git`. | Hardened in Milestone 6C to prevent build context leaks. | **PASS** |
 | [`Dockerfile`](../Dockerfile) | **Recommended** | Exists; multi-stage Docker build (Node 20 builder + Python 3.12 slim runtime). | Verified dynamic `$PORT` binding and healthcheck probe. | **PASS** |
 | [`skills-lock.json`](../skills-lock.json) | **Mandatory** (Skill Pack) | Exists; tracks 6 official challengepost skills with computed sha256 hashes. | Matches installed skills directory structure. | **PASS** |
-| Backend Source (`backend/`) | **Mandatory** | 100% complete; FastAPI, Engine A/B/C, ML recommender, Argon2id auth, SQLite + Postgres dual drivers, connection pooling, session policy overrides, bundle pricing consistency, Fair Deal Passport counterfactual engine, First-Party Outcome Ledger, Uplift Lab, and Multi-Store Profit Intelligence. | 251 passing backend unit tests (Step 5.20 release checkpoint). | **PASS** |
-| Frontend Source (`frontend/`) | **Mandatory** | 100% complete; React 19, Vite, Tailwind CSS, Lucide icons, responsive modals, Multi-Store Analytics Hub, CDP verified. | Built cleanly in 10.65s (index-q6zMaU6m.js). | **PASS** |
+| Backend Source (`backend/`) | **Mandatory** | FastAPI, hybrid recommender, Argon2id auth, SQLite + PostgreSQL drivers, connection pooling, session policy overrides, bundle pricing consistency, Fair Deal Passport, First-Party Outcome Ledger, Uplift Lab, Multi-Store Profit Intelligence, and Decision Twin features. | Historical Step 5.20 checkpoint: 251 passing tests. Supplementary local test run on October 21, 2026: 311 tests passed, 0 failures/errors in 50.095s. | **PASS** |
+| Frontend Source (`frontend/`) | **Mandatory** | React, TypeScript, Vite, Tailwind CSS, Lucide icons, responsive shopper and merchant interfaces, and analytics/Decision Twin screens. | Latest local `npm run build` succeeded in 3.38s (`index-HN8acTOg.js`). Vite warned that a JavaScript chunk exceeded 500 kB; this was a warning, not a build failure. | **PASS** |
 | `devpost/learner-profile.md` | **Private / Internal** | Exists; 3,821 bytes; contains personal learner notes and prior background. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
 | `.local/demo-credentials.local.md` | **Private / Internal** | Exists; 1,611 bytes; local demo seed log. | Strictly gitignored. Must NOT be published publicly. | **PROTECTED** |
 
@@ -56,7 +58,7 @@ We audited every file in the project against official Devpost requirements:
 
 ## 3. Secret Hygiene & Historical Git Audit
 
-A forensic scan of the Git repository history was performed:
+The findings below record the historical scan performed for the original audit. The latest local `git status` check showed only `.gitignore` and `.dockerignore` modified at that point, but the full Git-history secret scan has not been rerun as part of the October 21 supplementary checks. Before the final push, rerun an appropriate secret scan if any credentials were ever present. Historical scan results:
 
 1. **Current Working Tree:**  
    `git ls-files` was scanned for sensitive patterns:
@@ -83,19 +85,21 @@ To ensure absolute integrity and compliance with hackathon evaluation standards:
 | Capability | What is Genuinely Implemented in Code | What is Synthetic / Simulated | What is NOT Claimed |
 | :--- | :--- | :--- | :--- |
 | **Recommendation Engine** | Complete 10-stage hybrid candidate generation, Laplace-smoothed Apriori association rules, 14-feature HistGradientBoostingClassifier, and MMR reranking. | Tested on 400 held-out synthetic shopper baskets generated with documented behavioral archetypes. | We do NOT claim real consumer conversion uplift or real revenue gains. We demonstrate mathematical multi-item synergy. |
-| **Margin Guardrails** | Exact decimal/integer-cent mathematical enforcement: $\text{Basket Gross Margin} \ge \text{Floor}$ and $\text{Final Price} \le \text{Ref Price}$. Evaluated across the entire basket in sub-25ms. | Synthetic retail catalog with 32 curated products and realistic COGS margins (35%–65%). | We do NOT claim dynamic pricing or customer exploitation. Personalization strictly reduces or maintains prices. |
+| **Margin Guardrails** | Exact decimal/integer-cent mathematical enforcement: $\text{Basket Gross Margin} \ge \text{Floor}$ and $\text{Final Price} \le \text{Ref Price}$. Evaluated across the entire basket. | The current runtime/demo catalog is reported as 96 products across 15 categories. A 32-product synthetic fixture belongs to an earlier evaluation context and should not be presented as the current catalog size. | We do NOT claim dynamic pricing or customer exploitation. Personalization strictly reduces or maintains prices. |
 | **Generative AI** | Dual-mode explanation service integrating Google Gemini 2.5 Flash with sub-5ms deterministic offline fallback. | Gemini generates natural language copy; it is strictly prohibited from altering prices, discounts, or margins. | We do NOT claim Gemini computes pricing. Gemini is decoupled from the transaction path. |
 | **Economic Simulator** | Full 3-policy Monte Carlo simulation comparator (No Discount vs. Blanket 15% vs. FairCart AI) using Common Random Numbers (CRN). | Evaluates 1,000 synthetic shopping sessions per run across 5 shopper archetypes. | We do NOT claim simulator results represent real-world market outcomes. |
 | **Authentication & Orders** | Argon2id password hashing, server-validated sessions, HttpOnly cookies, cross-account order isolation, simulated checkout. | Seeded with 5 synthetic personas and 15 itemized demonstration past orders. | No real customer payment processing (zero Stripe/financial processing). |
 | **First-Party Outcome Ledger** | Real-time event tracking across 12 commerce stages, idempotency deduplication, and provenance breakdown. | Observed from interactive user sessions in local demo sandbox. | No fake purchases; demo orders are strictly labelled as simulated. |
 | **Offline Uplift Lab** | Two-Model T-Learner, empirical Qini curves, AUUC, and 3-strategy counterfactual comparison. | Evaluated on 1,000-sample synthetic mechanics fixture adhering to Criteo benchmark schema. | Public ad datasets lack wholesale COGS; causal uplift does not directly set storefront prices. |
 
-### 4.1 Future Architecture Roadmap (Preserved for Later Milestones)
-1. **Multi-Store Profit Intelligence:** Validated merchant analytics, multi-store comparison, and CSV sales/margin imports.
-2. **Concurrent Inventory-Aware Optimization:** Real-time stock reservation and dynamic scarcity bounding across concurrent sessions.
-3. **Demand & Sell-Through Forecasting:** Predictive replenishment modeling based on aggregated basket co-occurrence and seasonality.
-4. **Expanded Shopper-Intent Intelligence:** First-party behavioral session signals and voluntarily shared consumer preferences.
-5. **Authorized Advertising Integrations:** Google Analytics and Meta Business Conversions API integrations with explicit shopper consent.
+### 4.1 Current Advanced Features and Integration Boundaries (Supplementary Status: October 21, 2026)
+1. **Multi-Store Profit Intelligence:** Implemented for merchant analytics and CSV-based sales/funnel data ingestion; reported results should be understood in the context of the supplied or synthetic data.
+2. **Inventory-Aware Optimization:** Decision Twin inventory-aware decision-support functionality is implemented. Do not describe this as live, concurrent inventory reservation or real-time stock synchronization unless that exact production behavior has been independently tested.
+3. **Demand & Sell-Through Forecasting:** Forecasting components are implemented for decision support. Their real-world predictive accuracy has not been established by synthetic/demo data alone.
+4. **Shopper-Intent Signals:** Session-intent signals are implemented using available first-party/session signals. Do not claim training on millions of real customer interactions unless an actual qualifying dataset was used and can be documented.
+5. **Decision Traces:** Decision/audit traces support inspection of why a recommendation or policy decision was made.
+6. **Analytics Connectors (GA4/Shopify):** Connector/framework code exists, but live synchronization is not claimed unless credentials are configured and a real connection has been tested.
+7. **Evidence boundary:** Recommendation-quality tests and policy/uplift simulations use synthetic or evaluation data; they do not establish real-world revenue or conversion uplift.
 
 ---
 
@@ -110,18 +114,18 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **3** | **Open-Source LICENSE** | [`LICENSE`](../LICENSE) | Standard permissive MIT License with 2026 copyright attribution. Required for public open-source entry. | **PASS** | Automated / Verified |
 | **4** | **README & Setup Guide** | [`README.md`](../README.md) | Comprehensive markdown: overview, local setup, demo persona guide, dual-persistence docs, Docker specs, track alignment. | **PASS** | Automated / Verified |
 | **5** | **Public Deployment & Tested URL** | [`https://faircart-ai.onrender.com`](https://faircart-ai.onrender.com)<br>*(and GitHub repo in "Try it out")* | Deployed live to Render with Neon Serverless PostgreSQL persistence. Verified with 10/10 live production probes passing (health, auth, multi-store dashboard, PII firewall, and core invariants). | **PASS** | Verified Live |
-| **6** | **Public Demo Video (<3 min)** | YouTube / Vimeo link | Detailed 2.5–3 minute walkthrough outline provided below. In strict adherence to competition rules, video must be recorded by the human learner. | **NEEDS REVIEW** | **Learner Action** (Record & upload video) |
+| **6** | **Public Demo Video (<3 min)** | YouTube / Vimeo link | A local final demo video has been prepared and assessed at approximately 2:47. Upload it publicly or with the visibility setting permitted by the official rules, then verify the video URL is entered in the Devpost submission. | **NEEDS REVIEW** | **Learner Action** (Upload & link video) |
 | **7** | **Project Description & Story** | Devpost Submission Form Fields | Comprehensive factual summary and technical outline prepared in Section 5.2. Personal responses must be submitted in learner's own words. | **NEEDS REVIEW** | **Learner Action** (Fill Devpost text fields) |
 | **8** | **Skill Pack Usage Explanation** | Devpost Required Text Field | `skills-lock.json` tracks all 6 skills from `challengepost/learn-ai-basics` (committed at `957c0fe`). 6-stage workflow documented. | **PASS** | Automated / Verified |
 | **9** | **Age-of-Majority Confirmation** | Devpost Required Checkbox | Mandatory legal eligibility confirmation checkbox on Devpost form. Must be confirmed personally by learner. | **NEEDS REVIEW** | **Learner Action** (Check confirmation box) |
-| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | **251 / 251 unit tests pass** in 143.2s (0 failures, 0 errors). Frontend builds cleanly in 10.65s (index-q6zMaU6m.js). Zero API keys, secrets, or `.db` files in Git history. | **PASS** | Automated / Verified |
+| **10** | **Secret Hygiene & Test Suite** | Backend tests (`backend/tests/`)<br>Git history (`git log --all`) | Historical Step 5.20 test baseline: 251/251. Supplementary local verification on October 21, 2026: **311 tests passed, 0 failures/errors** in 50.095s. Frontend build succeeded in 3.38s (`index-HN8acTOg.js`); the build emitted a non-failing chunk-size advisory. The zero-secret finding refers to the historical Git audit and should not be treated as a fresh history scan. | **PASS** | Automated / Verified |
 
 ---
 
 ## 5.1 Submitter Action Guide (Separation of Responsibilities)
 
 ### A. Completed & Verified by Agent (Zero Further Coding Needed)
-- [x] **Code Complete:** 251 automated backend tests pass; frontend TypeScript compiles cleanly.
+- [x] **Code Verification:** Latest supplementary local run on October 21, 2026 passed all 311 backend tests (0 failures/errors); the frontend TypeScript/Vite production build succeeded in 3.38s with a non-failing chunk-size advisory.
 - [x] **Production Container:** Multi-stage `Dockerfile` with health probe and dynamic `$PORT`.
 - [x] **CORS Security Guardrail:** Strict production startup failure on wildcard `*` with credentials enabled (`resolve_cors_origins`).
 - [x] **Database Durability & Pooling:** Dual SQLite / Neon PostgreSQL support with connection pooling and strict production startup failure (no silent fallback).
@@ -132,27 +136,25 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 - [x] **Planning Artifacts:** `scope.md`, `prd.md`, `spec.md`, `checklist.md`, `app-map.html`, `README.md`, `LICENSE` verified.
 
 ### B. Mandatory Personal Actions for the Submitter (Pranav)
-1. **Push to Public GitHub Repository:**
+1. **Verify the existing Public GitHub Repository:**
    ```powershell
-   git remote add origin https://github.com/<your-username>/EthicalEcommerceAI.git
-   git branch -M main
-   git push -u origin main
+   git remote -v
+   git status --short
    ```
+   The repository is already published. Do not add a second `origin` remote if one already exists. Commit and push only after reviewing the intended changes, and never stage secrets or generated media.
 2. **Submit Public URL in Devpost:**
    - Enter your public GitHub repo URL (or live Render URL if deployed) into Devpost's **"Try it out"** field.
-3. **Record Demo Video (<3 Minutes):**
-   - Follow this concise 2-minute demonstration flow:
-     * **0:00–0:25:** *The Problem:* Traditional e-commerce destroys margins with blanket discounts and manipulates shoppers with artificial countdowns and deceptive reference prices.
-     * **0:25–1:00:** *Shopper Experience:* Add an item on the Storefront. Observe complementary recommendation with transparent math, view the Gemini explanation, and complete simulated checkout.
-     * **1:00–1:30:** *Merchant Margin Floor:* Switch to Merchant Console. Adjust the Gross Margin Floor slider upward from 20% to 35%. Return to cart and observe that discount is automatically revoked to preserve merchant solvency.
-     * **1:30–2:00:** *3-Policy Simulation:* Run the 1,000-session Monte Carlo simulator comparing No Discount vs. Blanket 15% vs. FairCart AI, demonstrating higher contribution profit with controlled promotional expense.
-   - Upload publicly to YouTube or Vimeo.
+3. **Publish and link the final demo video (<3 Minutes):**
+   - A final local video file has been prepared (approximately 2:47). Verify the exported file plays correctly end-to-end.
+   - Upload it to YouTube or Vimeo using a visibility setting allowed by the official rules.
+   - Paste the public video URL into the Devpost video field and verify it opens without requiring your personal account.
+   - Ensure any simulated results are clearly presented as simulated, and that the video accurately reflects the deployed application.
 4. **Fill Devpost Submission Form in Your Own Words:**
    - *Inspiration:* Why protecting merchant margins while avoiding deceptive dark patterns matters to you.
    - *What it does:* Real-time constrained optimization bounding recommendations by non-bypassable margin floors and price ceilings.
    - *How you built it:* FastAPI, React 19, Gemini 2.5 Flash, Neon PostgreSQL/SQLite, guided by the Learn Skill Pack.
    - *Challenges:* Integer-cent arithmetic across bundles, Windows Python environment tuning, sub-25ms synchronous local decisions.
-   - *Accomplishments:* 178 passing tests, Fair Deal Passport counterfactual offer transparency, offer-to-cart bundle pricing consistency, session-scoped policy overrides, connection pooling, full 3-policy simulation comparator, Argon2id multi-persona demo auth.
+   - *Accomplishments:* 311 passing backend tests in the latest local verification, Fair Deal Passport counterfactual offer transparency, offer-to-cart bundle pricing consistency, session-scoped policy overrides, connection pooling, three-policy simulation comparator, Argon2id multi-persona demo authentication, and Decision Twin decision-support capabilities.
    - *What you learned:* Flipped interaction, planning before coding (`scope` $\to$ `prd` $\to$ `spec`), and mathematical invariant preservation.
 5. **Skill Pack Usage Field:**
    - In the required question on Devpost, describe how you ran the 6 stages (`1-start` to `6-ship`) with the Learn Skill Pack (`challengepost/learn-ai-basics`).
@@ -171,5 +173,5 @@ In accordance with official Devpost rules and the Learn Skill Pack specification
 | **Planning Document Integrity** | `scope.md`, `prd.md`, `spec.md` completely match codebase architecture | **PASS** |
 | **Secret Hygiene** | Zero credentials in Git history; passwords redacted from public APIs; masked DB logs | **PASS** |
 | **Open Source Licensing** | MIT License file verified in repository root | **PASS** |
-| **Code Verification** | 251 unit tests pass; frontend builds with 0 type errors | **PASS** |
-| **Overall Submission Readiness** | Codebase and documentation 100% ready; submitter actions identified | **READY FOR REVIEW** |
+| **Code Verification** | Latest supplementary local verification: 311 backend tests passed, 0 failures/errors; frontend production build succeeded with 0 TypeScript errors and a non-failing chunk-size advisory. | **PASS** |
+| **Overall Submission Readiness** | Core app verification is green in the latest local run. Final repository push, public video URL, Devpost fields, eligibility confirmation, and a final production smoke test remain submitter checks. | **READY FOR FINAL SUBMITTER CHECKS** |

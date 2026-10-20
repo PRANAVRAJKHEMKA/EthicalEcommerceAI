@@ -36,3 +36,6 @@ Thumbs.db
 .claude/
 agent/
 /scratch/
+
+# Generated demo videos, raw frames, and temporary render assets
+/artifacts/
